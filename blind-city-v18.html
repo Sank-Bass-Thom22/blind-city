@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="description" content="Blind City RP Total v18 — monde sonore accessible pour joueurs non et malvoyants. Conduite, missions, commerce, exploration vocale.">
+<title>Blind City — RP Total v18.0 (police humaine, véhicules, prison, fouille)</title>
+<style>
+:root {
+  --bg:#07090e; --panel:#101520; --panel-2:#141b29; --border:#2a344a;
+  --text:#e8edf5; --muted:#9aa5bc; --accent:#ff9a44; --accent-2:#44c2ff;
+  --good:#5ee397; --bad:#ff6b6b; --warn:#ffd166; --info:#88ccff;
+  --focus:#5ec8ff;
+}
+* { box-sizing:border-box; margin:0; padding:0; user-select:none; -webkit-tap-highlight-color:transparent; }
+html, body { height:100%; }
+body {
+  background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+  display:flex; flex-direction:column; align-items:center; min-height:100vh; padding:10px;
+  background-image:radial-gradient(circle at 25% 20%, #1a2233 0%, var(--bg) 70%);
+}
+.sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
+
+.hud {
+  width:100%; max-width:1200px; display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
+  gap:6px; background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:8px 12px;
+  margin-bottom:10px; font-size:0.82rem;
+}
+.hud span { display:flex; align-items:center; gap:5px; }
+.hud strong { color:var(--accent); }
+.hud .money { color:var(--good); font-weight:700; }
+.hud .alert { color:var(--bad); animation:pulse 1.2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+
+#radioMsg {
+  background:var(--panel-2); padding:3px 12px; border-radius:30px; border-left:3px solid var(--accent);
+  font-style:italic; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:280px;
+}
+
+.layout { display:flex; gap:14px; width:100%; max-width:1200px; flex-wrap:wrap; }
+.panel {
+  background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:12px 14px;
+  flex:1; min-width:300px; min-height:220px;
+}
+.panel h2 { font-size:1rem; color:var(--accent); margin-bottom:8px; }
+.panel h3 { font-size:0.92rem; color:var(--accent-2); margin:10px 0 6px; }
+
+#log {
+  height:240px; overflow-y:auto; font-size:0.85rem; line-height:1.45; border-top:1px solid var(--border);
+  margin-top:6px; padding-top:6px;
+}
+#log p { margin:0 0 4px 0; padding:4px 8px; border-radius:5px; }
+#log p.event { color:var(--accent); background:#2a1f14; }
+#log p.npc { color:var(--good); background:#142d20; }
+#log p.trade { color:var(--good); background:#1a2a1a; border-left:2px solid var(--good); }
+#log p.radio { color:var(--info); background:#142633; font-style:italic; }
+#log p.damage { color:var(--bad); background:#3a1a1a; }
+#log p.system { color:var(--muted); }
+#log p.room { color:#c9a6ff; background:#20172e; }
+#log p.mission { color:var(--warn); background:#2a2210; }
+
+.controls-list { list-style:none; padding:0; margin:4px 0 8px; display:flex; flex-wrap:wrap; gap:3px 12px; font-size:0.75rem; color:var(--muted); }
+.controls-list li strong { color:var(--accent); }
+.status-line { margin:3px 0; font-size:0.84rem; color:var(--muted); }
+.status-line strong { color:var(--text); }
+
+.touch-grid { display:grid; grid-template-columns:repeat(3,56px); gap:8px; justify-content:center; margin:10px 0; }
+.touch-btn {
+  background:var(--panel-2); border:1px solid var(--border); border-radius:12px; color:var(--text);
+  font-size:1.25rem; width:56px; height:56px; display:flex; align-items:center; justify-content:center;
+  touch-action:manipulation; cursor:pointer; transition:transform .05s, background .15s;
+}
+.touch-btn:active { background:#2a344a; transform:scale(0.96); }
+.touch-btn:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
+.touch-btn.primary { background:#1f3a2a; border-color:#4a8a5a; }
+.touch-btn.danger { background:#3a1a1a; border-color:#a05050; }
+.touch-btn.info { background:#1a2a3a; border-color:#4a7aa0; }
+
+.touch-actions { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; margin-top:6px; }
+.touch-actions .touch-btn { width:auto; padding:0 12px; height:44px; font-size:0.78rem; }
+.mic-btn { background:#2a4a3a; border-color:#4a8a5a; }
+.mic-btn.listening { background:#7a3a3a; border-color:#cc5a5a; animation:pulse 1s infinite; }
+
+#startOverlay {
+  position:fixed; inset:0; background:#07090ee0; display:flex; align-items:center; justify-content:center;
+  z-index:100; padding:18px;
+}
+#startOverlay .box { max-width:620px; background:var(--panel); padding:28px; border-radius:24px; border:1px solid var(--border); text-align:center; }
+#startOverlay h1 { color:var(--accent); font-size:1.8rem; margin-bottom:6px; }
+#startOverlay .studio { color:var(--muted); font-size:0.9rem; margin-bottom:14px; }
+#startOverlay p { color:var(--text); line-height:1.55; margin:10px 0; font-size:0.95rem; }
+#startOverlay ul { text-align:left; color:var(--muted); font-size:0.85rem; line-height:1.5; display:inline-block; margin:10px 0; }
+#startOverlay li strong { color:var(--accent); }
+#startBtn { background:var(--accent); color:#1a1200; border:none; font-size:1.15rem; padding:14px 32px; border-radius:40px; font-weight:bold; margin-top:14px; cursor:pointer; }
+#startBtn:focus-visible { outline:3px solid var(--focus); }
+
+#menuOverlay {
+  position:fixed; inset:0; background:#07090ed9; z-index:90; display:none; align-items:center; justify-content:center; padding:18px;
+}
+#menuOverlay .box { max-width:760px; max-height:90vh; overflow-y:auto; background:var(--panel); padding:22px; border-radius:20px; border:1px solid var(--border); width:100%; }
+#menuOverlay h2 { color:var(--accent); margin-bottom:12px; }
+#menuOverlay .close { float:right; background:#3a1a1a; color:var(--text); border:1px solid var(--border); border-radius:8px; padding:6px 12px; cursor:pointer; }
+.menu-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:10px; }
+.menu-card { background:var(--panel-2); border:1px solid var(--border); border-radius:12px; padding:12px; cursor:pointer; transition:background .15s; }
+.menu-card:hover, .menu-card:focus-visible { background:#1c2435; }
+.menu-card h4 { color:var(--accent-2); font-size:0.95rem; margin-bottom:4px; }
+.menu-card p { color:var(--muted); font-size:0.78rem; line-height:1.4; }
+
+#qtyOverlay { position:fixed; inset:0; background:#07090ed9; z-index:96; display:none; align-items:center; justify-content:center; padding:18px; }
+#qtyOverlay .qty-box { max-width:380px; width:100%; background:var(--panel); padding:22px; border-radius:20px; border:1px solid var(--border); text-align:center; }
+#qtyOverlay h3 { color:var(--accent); margin-bottom:4px; font-size:1rem; }
+#qtyOverlay .qty-sub { color:var(--muted); font-size:0.78rem; margin-bottom:10px; }
+#qtyValue { font-size:2.4rem; font-weight:bold; color:var(--accent-2); margin:8px 0; }
+#qtyOverlay .qty-row { display:flex; gap:10px; justify-content:center; margin-top:10px; }
+#qtyOverlay button.phone-btn { min-width:48px; }
+#qtyHint { font-size:0.68rem; color:var(--muted); margin-top:12px; line-height:1.4; }
+
+#freqOverlay { position:fixed; inset:0; background:#07090ed9; z-index:96; display:none; align-items:center; justify-content:center; padding:18px; }
+#freqOverlay .freq-box { max-width:380px; width:100%; background:var(--panel); padding:22px; border-radius:20px; border:1px solid var(--border); text-align:center; }
+#freqOverlay h3 { color:var(--accent); margin-bottom:10px; font-size:1rem; }
+#freqInput { width:100%; font-size:1.6rem; text-align:center; padding:10px; border-radius:10px; border:1px solid var(--border); background:var(--panel-2); color:var(--text); margin-bottom:12px; }
+#freqOverlay .freq-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:12px; }
+#freqOverlay .freq-grid button { padding:12px 0; font-size:1.05rem; border-radius:10px; border:1px solid var(--border); background:var(--panel-2); color:var(--text); cursor:pointer; }
+#freqOverlay .freq-grid button:hover, #freqOverlay .freq-grid button:focus-visible { background:#1c2435; }
+#freqOverlay .freq-row { display:flex; gap:10px; justify-content:center; }
+
+.footer-credit { margin-top:12px; padding-top:8px; border-top:1px solid var(--border); font-size:0.65rem; text-align:center; color:var(--muted); }
+
+@media(max-width:700px){
+  .hud{ font-size:0.72rem; padding:6px 8px; gap:4px; }
+  .hud #radioMsg{ max-width:140px; font-size:0.65rem; }
+  .panel{ min-width:100%; }
+  .touch-grid{ grid-template-columns:repeat(3,52px); }
+  .touch-btn{ width:52px; height:52px; }
+}
+
+/* ===== PHONE UI ===== */
+#phoneOverlay { position:fixed; inset:0; background:#07090ed9; z-index:95; display:none; align-items:center; justify-content:center; padding:18px; }
+.phone-frame { width:100%; max-width:360px; height:720px; max-height:90vh; background:#1a1f2b; border:12px solid #2a344a; border-radius:36px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 20px 60px #000; }
+.phone-notch { height:22px; background:#0f1420; border-radius:0 0 12px 12px; margin:0 auto; width:120px; }
+.phone-status { display:flex; justify-content:space-between; padding:6px 14px; font-size:0.7rem; color:var(--muted); background:#0f1420; }
+.phone-screen { flex:1; overflow-y:auto; padding:12px; background:linear-gradient(160deg, #131926 0%, #0d111a 100%); }
+.phone-screen h3 { color:var(--accent); margin-bottom:10px; font-size:1rem; }
+.app-grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:14px; margin-top:10px; }
+.app-icon { display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer; }
+.app-icon .icon { width:54px; height:54px; border-radius:16px; background:var(--panel-2); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:1.6rem; transition:transform .1s, background .15s; }
+.app-icon .icon:active { transform:scale(0.92); background:#222c3f; }
+.app-icon span { font-size:0.65rem; color:var(--text); text-align:center; }
+.contact-list, .msg-list { list-style:none; padding:0; }
+.contact-list li, .msg-list li { background:var(--panel-2); border:1px solid var(--border); border-radius:10px; padding:8px 10px; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; cursor:pointer; }
+.contact-list li:hover, .msg-list li:hover { background:#1c2435; }
+.phone-call { background:var(--panel-2); border-radius:16px; padding:16px; text-align:center; }
+.phone-call .caller { font-size:1.2rem; color:var(--accent); margin-bottom:6px; }
+.phone-call .status { color:var(--muted); font-size:0.85rem; margin-bottom:14px; }
+.call-btn { border:none; border-radius:50%; width:56px; height:56px; font-size:1.4rem; margin:0 8px; cursor:pointer; }
+.call-btn.answer { background:#2a6a3a; color:#fff; }
+.call-btn.hangup { background:#7a2a2a; color:#fff; }
+.phone-btn { background:#2a344a; color:var(--text); border:1px solid var(--border); border-radius:10px; padding:8px 12px; cursor:pointer; font-size:0.8rem; margin:4px 2px; }
+.phone-btn.active { background:var(--accent); color:#1a1200; border-color:var(--accent); }
+
+/* ===== COMPUTER UI ===== */
+#computerOverlay { position:fixed; inset:0; background:#07090ed9; z-index:96; display:none; align-items:center; justify-content:center; padding:18px; }
+.computer-frame { width:100%; max-width:900px; height:80vh; background:#0d1117; border:1px solid var(--border); border-radius:16px; display:flex; flex-direction:column; overflow:hidden; }
+.computer-top { background:#161b22; padding:8px 14px; display:flex; gap:10px; align-items:center; border-bottom:1px solid var(--border); }
+.computer-top .dot { width:12px; height:12px; border-radius:50%; }
+.computer-screen { flex:1; display:flex; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+.computer-sidebar { width:160px; background:#11161e; border-right:1px solid var(--border); padding:12px; }
+.computer-sidebar button { width:100%; background:transparent; color:var(--text); border:none; text-align:left; padding:8px; border-radius:6px; cursor:pointer; font-size:0.85rem; }
+.computer-sidebar button:hover { background:#1c2435; }
+.computer-main { flex:1; padding:14px; overflow-y:auto; }
+.terminal { background:#000; color:#3fb950; border-radius:10px; padding:12px; font-size:0.85rem; min-height:180px; white-space:pre-wrap; line-height:1.5; }
+.computer-input { display:flex; gap:8px; margin-top:10px; }
+.computer-input input { flex:1; background:#11161e; border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px; font-size:0.85rem; }
+.computer-input button { background:#2a344a; color:var(--text); border:1px solid var(--border); border-radius:8px; padding:8px 12px; cursor:pointer; }
+.file-list { list-style:none; padding:0; }
+.file-list li { display:flex; justify-content:space-between; padding:6px 8px; border-bottom:1px solid var(--border); font-size:0.85rem; cursor:pointer; }
+.file-list li:hover { background:#1c2435; }
+.hack-progress { height:10px; background:#11161e; border-radius:5px; overflow:hidden; margin-top:8px; }
+.hack-progress div { height:100%; background:var(--accent); width:0; transition:width .3s; }
+
+/* ===== SHOP DIALOG ===== */
+#shopDialog { position:fixed; inset:0; background:#07090ee6; z-index:94; display:none; align-items:center; justify-content:center; padding:18px; }
+.shop-frame { width:100%; max-width:640px; max-height:85vh; background:var(--panel); border:1px solid var(--border); border-radius:18px; padding:18px; overflow-y:auto; }
+.shop-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+.shop-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px; }
+.shop-item { background:var(--panel-2); border:1px solid var(--border); border-radius:12px; padding:10px; cursor:pointer; transition:background .15s; }
+.shop-item:hover, .shop-item:focus-visible { background:#1c2435; }
+.shop-item .name { font-weight:600; color:var(--text); font-size:0.85rem; }
+.shop-item .price { color:var(--good); font-size:0.8rem; }
+.shop-item .desc { color:var(--muted); font-size:0.72rem; margin-top:4px; }
+
+/* ===== BADGES / ROLES ===== */
+.badge { display:inline-block; padding:2px 8px; border-radius:12px; font-size:0.65rem; font-weight:700; text-transform:uppercase; margin-left:6px; }
+.badge-police { background:#1a3a6a; color:#88ccff; }
+.badge-medecin { background:#1a4a3a; color:#5ee397; }
+.badge-meca { background:#4a3a1a; color:#ffcc66; }
+.badge-citoyen { background:#3a3a4a; color:#b8c2d0; }
+</style>
+</head>
+<body>
+
+<div id="announcer" class="sr-only" aria-live="assertive" role="status"></div>
+<div id="announcerPolite" class="sr-only" aria-live="polite" role="log"></div>
+
+<div class="hud" role="banner">
+  <span><strong aria-label="Position">📍</strong> <span id="hudPos">Centre</span></span>
+  <span><strong aria-label="Argent">💰</strong> <span id="hudMoney" class="money">100 000 FCFA</span></span>
+  <span><strong aria-label="Banque">🏦</strong> <span id="hudBank">0 FCFA</span></span>
+  <span><strong aria-label="Argent sale">🚫💵</strong> <span id="hudDirty">0 FCFA</span></span>
+  <span><strong aria-label="Inventaire">🎒</strong> <span id="hudInv">vide</span></span>
+  <span><strong aria-label="Véhicule">🚗</strong> <span id="hudVeh">aucun</span></span>
+  <span><strong aria-label="Santé">❤️</strong> <span id="hudHealth">100%</span></span>
+  <span><strong aria-label="Mission">🎯</strong> <span id="hudMission">aucune</span></span>
+  <span id="radioMsg" style="display:none;"></span>
+</div>
+
+<div id="startOverlay">
+  <div class="box">
+    <h1>🌆 Blind City v18</h1>
+    <div class="studio">— RP Total, police gérée par les joueurs, véhicules détaillés, prison, fouille —</div>
+    <p>Un univers sonore et vivant conçu pour les joueurs non et malvoyants.<br>
+      <strong>Marche, conduis, vole, échange, vis, combats en RP. Nouveau : police humaine, testament au commissariat, menu véhicule, portes réelles, prison, fouille, sirène.</strong></p>
+    <ul>
+      <li><strong>Flèche haut</strong> : avancer d'un pas dans la direction où vous regardez (maintenir = avancer en continu).</li>
+      <li><strong>Flèche bas</strong> : reculer d'un pas (maintenir = reculer en continu).</li>
+      <li><strong>Flèche gauche</strong> : tourner sur soi vers la gauche.</li>
+      <li><strong>Flèche droite</strong> : tourner sur soi vers la droite.</li>
+      <li><strong>Espace</strong> : frein / reculer.</li>
+      <li><strong>E</strong> : interagir, monter/descendre d'un véhicule, entrer/sortir d'un bâtiment.</li>
+      <li><strong>W</strong> : scanner sonores des alentours.</li>
+      <li><strong>Maj+V</strong> : activer/couper le micro de proximité (parler aux gens autour de vous, sans appel).</li>
+      <li><strong>Ctrl+V</strong> (maintenir) : parler sur le talkie-walkie avec votre vraie voix.</li>
+      <li><strong>1-9</strong> : cibler une personne détectée.</li>
+      <li><strong>T</strong> : tirer. <strong>R</strong> : recharger. <strong>G</strong> : sortir/ranger l'arme. <strong>X</strong> : coup de poing.</li>
+      <li><strong>Y</strong> : porter un joueur. <strong>Shift+Z</strong> : l'installer dans le véhicule.</li>
+      <li><strong>↑/↓</strong> (cible verrouillée) : viser tête, torse, jambes.</li>
+      <li><strong>M</strong> : menu principal. <strong>V</strong> : commande vocale. <strong>H</strong> : aide.</li>
+      <li><strong>I</strong> : ma position vocale. <strong>N</strong> : inventaire vocal. <strong>O</strong> : garage.</li>
+      <li><strong>P</strong> : téléphone — banque, blanchiment, garage, contacts. <strong>K</strong> : ordinateur.</li>
+      <li><strong>Ctrl+J</strong> : menu véhicule. <strong>Ctrl+F</strong> : fouiller. <strong>Ctrl+U</strong> : menu police. <strong>Ctrl+S</strong> : sirène. <strong>Ctrl+L</strong> : verrouiller/déverrouiller son véhicule.</li>
+      <li><strong>Navigation non-voyants :</strong> <strong>C</strong> boussole sonore, <strong>F</strong> radar de balayage des lieux, <strong>Maj+C</strong> visite guidée de la ville, <strong>Maj+B</strong> balises sonores de proximité, <strong>Maj+G</strong> arrêter le guidage, <strong>Maj+P</strong> fouiller sa poche (choisir téléphone/tablette/ordinateur). Pour être guidé pas à pas vers un lieu : téléphone, application Lieux utiles, bouton 🚶.</li>
+      <li><strong>F9</strong> à <strong>F12</strong>, <strong>Ctrl+1-9</strong>, <strong>Alt+1-9</strong>, <strong>Shift+1-9</strong> : raccourcis rapides.</li>
+    </ul>
+    <p style="font-size:0.8rem; color:var(--muted);">
+      Le téléphone lit l'écran ? Glisse à 1 doigt pour avancer, 2 pour scanner, 3 pour interagir,
+      4 pour l'inventaire, 5 doigts pour ouvrir/fermer le téléphone. Appui long pour le menu vocal
+      correspondant, ou appui long à 5 doigts pour le menu principal. Balayage horizontal à 2 doigts :
+      changer de fréquence radio. Les sons sont spatiaux : penchez la tête vers un bruit pour vous orienter.
+    </p>
+    <div class="char-creator" style="margin:14px 0; text-align:left; background:var(--panel-2); padding:14px; border-radius:14px; border:1px solid var(--border);">
+      <h3 style="color:var(--accent-2); font-size:0.95rem; margin-bottom:8px;">👤 Créer votre personnage</h3>
+      <label style="display:block; font-size:0.8rem; color:var(--muted); margin-bottom:4px;">Prénom
+        <input type="text" id="charFirstName" placeholder="Prénom" autocomplete="off" style="width:100%; padding:9px; margin-top:3px; border-radius:8px; border:1px solid var(--border); background:var(--panel); color:var(--text); font-size:0.95rem;">
+      </label>
+      <label style="display:block; font-size:0.8rem; color:var(--muted); margin:10px 0 4px;">Nom
+        <input type="text" id="charLastName" placeholder="Nom" autocomplete="off" style="width:100%; padding:9px; margin-top:3px; border-radius:8px; border:1px solid var(--border); background:var(--panel); color:var(--text); font-size:0.95rem;">
+      </label>
+      <fieldset style="border:none; margin-top:10px; padding:0;">
+        <legend style="font-size:0.8rem; color:var(--muted); margin-bottom:4px;">Personnage joué</legend>
+        <label style="font-size:0.88rem; margin-right:18px; color:var(--text);"><input type="radio" name="charGender" value="homme" checked> 🧑 Homme</label>
+        <label style="font-size:0.88rem; color:var(--text);"><input type="radio" name="charGender" value="femme"> 👩 Femme</label>
+      </fieldset>
+      <label style="display:block; font-size:0.8rem; color:var(--muted); margin:12px 0 4px;">Serveur multijoueur (facultatif — laisser vide pour jouer seul)
+        <input type="text" id="charServerUrl" placeholder="wss://votre-serveur.exemple.com" autocomplete="off" style="width:100%; padding:9px; margin-top:3px; border-radius:8px; border:1px solid var(--border); background:var(--panel); color:var(--text); font-size:0.9rem;">
+      </label>
+      <p style="font-size:0.72rem; color:var(--muted); margin-top:6px;">Renseignez l'adresse du serveur Blind City Online pour jouer en RP avec d'autres joueurs connectés, où qu'ils soient dans le monde. Sans adresse, vous jouez seul sur cet appareil.</p>
+      <fieldset style="border:1px solid var(--border); border-radius:10px; margin-top:12px; padding:10px;">
+        <legend style="font-size:0.82rem; color:var(--accent-2); padding:0 4px;">🔑 Compte joueur (obligatoire si vous renseignez un serveur ci-dessus)</legend>
+        <label style="font-size:0.85rem; display:block; margin-bottom:4px; color:var(--text);"><input type="radio" name="accountAction" value="login" checked> Se connecter à mon compte</label>
+        <label style="font-size:0.85rem; display:block; margin-bottom:8px; color:var(--text);"><input type="radio" name="accountAction" value="register"> Créer un compte</label>
+        <div id="realNameBlock">
+          <label style="display:block; font-size:0.78rem; color:var(--muted); margin-bottom:4px;">Votre vrai prénom (utile seulement à la création — connu de l'administrateur, jamais affiché aux autres joueurs)
+            <input type="text" id="realFirstName" placeholder="votre vrai prénom" autocomplete="off" style="width:100%; padding:8px; margin-top:3px; border-radius:8px; border:1px solid var(--border); background:var(--panel); color:var(--text); font-size:0.9rem;">
+          </label>
+          <label style="display:block; font-size:0.78rem; color:var(--muted); margin:8px 0 4px;">Votre vrai nom
+            <input type="text" id="realLastName" placeholder="votre vrai nom" autocomplete="off" style="width:100%; padding:8px; margin-top:3px; border-radius:8px; border:1px solid var(--border); background:var(--panel); color:var(--text); font-size:0.9rem;">
+          </label>
+        </div>
+        <label style="display:block; font-size:0.78rem; color:var(--muted); margin-bottom:4px;">Identifiant
+          <input type="text" id="accountUsername" placeholder="identifiant" autocomplete="off" style="width:100%; padding:8px; margin-top:3px; border-radius:8px; border:1px solid var(--border); background:var(--panel); color:var(--text); font-size:0.9rem;">
+        </label>
+        <label style="display:block; font-size:0.78rem; color:var(--muted); margin:8px 0 4px;">Mot de passe
+          <input type="password" id="accountPassword" placeholder="mot de passe" autocomplete="off" style="width:100%; padding:8px; margin-top:3px; border-radius:8px; border:1px solid var(--border); background:var(--panel); color:var(--text); font-size:0.9rem;">
+        </label>
+        <div id="securityQABlock">
+          <label style="display:block; font-size:0.78rem; color:var(--muted); margin:8px 0 4px;">Question de sécurité (pour récupérer le compte en cas de mot de passe oublié — utile seulement à la création)
+            <select id="securityQuestion" style="width:100%; padding:8px; margin-top:3px; border-radius:8px; border:1px solid var(--border); background:var(--panel); color:var(--text); font-size:0.9rem;">
+              <option value="Nom de votre premier animal de compagnie ?">Nom de votre premier animal de compagnie ?</option>
+              <option value="Ville où vous êtes né(e) ?">Ville où vous êtes né(e) ?</option>
+              <option value="Nom de votre meilleur ami d'enfance ?">Nom de votre meilleur ami d'enfance ?</option>
+              <option value="Votre plat préféré ?">Votre plat préféré ?</option>
+            </select>
+          </label>
+          <label style="display:block; font-size:0.78rem; color:var(--muted); margin:8px 0 4px;">Réponse
+            <input type="text" id="securityAnswer" placeholder="réponse" autocomplete="off" style="width:100%; padding:8px; margin-top:3px; border-radius:8px; border:1px solid var(--border); background:var(--panel); color:var(--text); font-size:0.9rem;">
+          </label>
+        </div>
+        <div id="rpInterviewBlock" style="margin-top:10px; border-top:1px solid var(--border); padding-top:10px;">
+          <p style="font-size:0.8rem; color:var(--accent-2); margin-bottom:6px;">🎭 Petit entretien RP (à la création uniquement)</p>
+          <fieldset style="border:none; padding:0; margin-bottom:10px;">
+            <legend style="font-size:0.78rem; color:var(--text);">1. Que signifie « RP » dans ce jeu ?</legend>
+            <label style="font-size:0.8rem; display:block;"><input type="radio" name="rpQ1" value="0"> Un mode de jeu sans aucune règle</label>
+            <label style="font-size:0.8rem; display:block;"><input type="radio" name="rpQ1" value="1"> Interpréter réellement son personnage, comme dans un jeu de rôle</label>
+            <label style="font-size:0.8rem; display:block;"><input type="radio" name="rpQ1" value="2"> Un raccourci clavier du jeu</label>
+          </fieldset>
+          <fieldset style="border:none; padding:0; margin-bottom:10px;">
+            <legend style="font-size:0.78rem; color:var(--text);">2. Un joueur vous tue sans aucune raison de jeu de rôle. Que faites-vous ?</legend>
+            <label style="font-size:0.8rem; display:block;"><input type="radio" name="rpQ2" value="0"> Je le tue en retour immédiatement</label>
+            <label style="font-size:0.8rem; display:block;"><input type="radio" name="rpQ2" value="1"> Je continue à jouer normalement et je signale au staff si besoin</label>
+            <label style="font-size:0.8rem; display:block;"><input type="radio" name="rpQ2" value="2"> Je l'insulte dans le chat</label>
+          </fieldset>
+          <fieldset style="border:none; padding:0; margin-bottom:10px;">
+            <legend style="font-size:0.78rem; color:var(--text);">3. Dans le chat général (hors personnage), quelqu'un dit où se cache un joueur. Pouvez-vous utiliser cette information avec votre personnage en jeu ?</legend>
+            <label style="font-size:0.8rem; display:block;"><input type="radio" name="rpQ3" value="0"> Oui, l'information est disponible, donc je peux l'utiliser</label>
+            <label style="font-size:0.8rem; display:block;"><input type="radio" name="rpQ3" value="1"> Non, mon personnage ne l'a pas appris en jeu, donc je ne dois pas l'utiliser</label>
+            <label style="font-size:0.8rem; display:block;"><input type="radio" name="rpQ3" value="2"> Oui, seulement si personne ne le remarque</label>
+          </fieldset>
+          <fieldset style="border:none; padding:0; margin-bottom:10px;">
+            <legend style="font-size:0.78rem; color:var(--text);">4. Vous êtes menotté et à terre après une arrestation RP. Que faites-vous ?</legend>
+            <label style="font-size:0.8rem; display:block;"><input type="radio" name="rpQ4" value="0"> Je me téléporte ailleurs pour fuir</label>
+            <label style="font-size:0.8rem; display:block;"><input type="radio" name="rpQ4" value="1"> Je reste RP et je coopère avec la situation</label>
+            <label style="font-size:0.8rem; display:block;"><input type="radio" name="rpQ4" value="2"> Je ferme le jeu</label>
+          </fieldset>
+          <fieldset style="border:none; padding:0; margin-bottom:6px;">
+            <legend style="font-size:0.78rem; color:var(--text);">5. Vous croisez un inconnu dans la rue et vous le tuez juste pour vous amuser, sans aucune raison. Est-ce autorisé ?</legend>
+            <label style="font-size:0.8rem; display:block;"><input type="radio" name="rpQ5" value="0"> Non, il faut une vraie raison de jeu de rôle pour tuer quelqu'un</label>
+            <label style="font-size:0.8rem; display:block;"><input type="radio" name="rpQ5" value="1"> Oui, c'est juste un jeu</label>
+            <label style="font-size:0.8rem; display:block;"><input type="radio" name="rpQ5" value="2"> Oui, si j'ai une arme sur moi</label>
+          </fieldset>
+          <p style="font-size:0.68rem; color:var(--muted);">Si vous répondez bien à la plupart des questions, votre compte est accepté automatiquement. Sinon, il reste en attente jusqu'à ce qu'un administrateur l'examine et décide de l'accepter ou non.</p>
+        </div>
+        <button type="button" id="forgotPasswordBtn" class="phone-btn" style="margin-top:8px;">🔓 Mot de passe oublié ?</button>
+        <p style="font-size:0.68rem; color:var(--muted); margin-top:6px;">Un compte retient votre progression (argent, missions, véhicules...) et vous permet de la retrouver depuis n'importe quel appareil, tant que vous jouez sur le même serveur avec les mêmes identifiants. Sans adresse de serveur ci-dessus, cette section est ignorée : vous jouez seul, sauvegarde sur cet appareil uniquement.</p>
+      </fieldset>
+      <p style="font-size:0.72rem; color:var(--muted); margin-top:8px;">Une fois en jeu, rendez-vous au commissariat pour votre enregistrement RP obligatoire (identité, empreintes) avant de pouvoir demander un métier — ceci est distinct du compte technique ci-dessus.</p>
+    </div>
+    <button id="startBtn">Entrer dans la cité</button>
+  </div>
+</div>
+
+<!-- BOÎTE D'ÉTAT DE COMPTE : messages de connexion/inscription, narrée. -->
+<div id="accountStatusOverlay" role="status" aria-live="assertive" style="position:fixed; inset:0; background:#07090ed9; z-index:98; display:none; align-items:center; justify-content:center; padding:18px;">
+  <div class="freq-box">
+    <h3>🔑 Compte joueur</h3>
+    <p id="accountStatusText" style="font-size:0.9rem;">Connexion en cours...</p>
+  </div>
+</div>
+
+<div id="menuOverlay">
+  <div class="box">
+    <button class="close" id="closeMenu">Fermer</button>
+    <h2 id="menuTitle">Menu</h2>
+    <div id="menuContent" class="menu-grid"></div>
+  </div>
+</div>
+
+<div id="qtyOverlay" role="dialog" aria-modal="true" aria-label="Choisir une quantité">
+  <div class="qty-box">
+    <h3 id="qtyTitle">Quantité</h3>
+    <p class="qty-sub" id="qtySub">Objet</p>
+    <div id="qtyValue" aria-live="assertive">1</div>
+    <div class="qty-row">
+      <button class="phone-btn" id="qtyMinus" aria-label="Diminuer">➖</button>
+      <button class="phone-btn" id="qtyMax" aria-label="Tout">Tout</button>
+      <button class="phone-btn" id="qtyPlus" aria-label="Augmenter">➕</button>
+    </div>
+    <div class="qty-row">
+      <button class="phone-btn" id="qtyConfirm">✅ Valider</button>
+      <button class="phone-btn" id="qtyCancel">❌ Annuler</button>
+    </div>
+    <p id="qtyHint">Mobile : glisser haut/bas = +1/-1, glisser gauche/droite = -5/+5, double-tap = valider, 2 doigts glisser bas = annuler.
+    Windows : flèches Haut/Bas = +1/-1, Gauche/Droite = -5/+5, Entrée = valider, Échap = annuler.</p>
+  </div>
+</div>
+
+<div id="freqOverlay" role="dialog" aria-modal="true" aria-label="Composer une fréquence de talkie-walkie">
+  <div class="freq-box">
+    <h3>📻 Composer la fréquence</h3>
+    <label for="freqInput" style="display:block; font-size:0.78rem; color:var(--muted); margin-bottom:4px;">Fréquence en MHz (ex : 151.500)</label>
+    <input type="text" id="freqInput" inputmode="decimal" autocomplete="off" aria-label="Fréquence en mégahertz">
+    <div class="freq-grid" id="freqKeypad" aria-hidden="false"></div>
+    <div class="freq-row">
+      <button class="phone-btn" id="freqConfirm">✅ Valider</button>
+      <button class="phone-btn" id="freqCancel">❌ Annuler</button>
+    </div>
+    <p style="font-size:0.68rem; color:var(--muted); margin-top:10px;">Vous pouvez taper au clavier, utiliser le pavé tactile ci-dessus, ou le clavier virtuel de votre lecteur d'écran directement dans le champ.</p>
+  </div>
+</div>
+
+<!-- BOÎTE DE SAISIE DE TEXTE ACCESSIBLE (narrée par le jeu lui-même, sans NVDA)
+     Remplace prompt()/confirm() partout où un vrai texte libre est nécessaire :
+     un prompt() natif du navigateur ne peut pas être narré par le jeu. -->
+<div id="textPromptOverlay" role="dialog" aria-modal="true" aria-label="Saisie de texte" style="position:fixed; inset:0; background:#07090ed9; z-index:97; display:none; align-items:center; justify-content:center; padding:18px;">
+  <div class="freq-box">
+    <h3 id="textPromptTitle">Saisie</h3>
+    <p id="textPromptDesc" style="font-size:0.78rem; color:var(--muted); margin-bottom:4px;"></p>
+    <input type="text" id="textPromptInput" autocomplete="off" aria-label="Champ de saisie">
+    <div class="freq-row">
+      <button class="phone-btn" id="textPromptConfirm">✅ Valider</button>
+      <button class="phone-btn" id="textPromptCancel">❌ Annuler</button>
+    </div>
+  </div>
+</div>
+
+<!-- BOÎTE OUI/NON ACCESSIBLE : remplace confirm() natif du navigateur, qui ne
+     peut pas non plus être narré par le jeu sans lecteur d'écran externe. -->
+<div id="confirmPromptOverlay" role="dialog" aria-modal="true" aria-label="Confirmation" style="position:fixed; inset:0; background:#07090ed9; z-index:97; display:none; align-items:center; justify-content:center; padding:18px;">
+  <div class="freq-box">
+    <h3 id="confirmPromptTitle">Confirmer ?</h3>
+    <p id="confirmPromptDesc" style="font-size:0.85rem; margin-bottom:10px;"></p>
+    <div class="freq-row">
+      <button class="phone-btn" id="confirmPromptYes">✅ Oui</button>
+      <button class="phone-btn" id="confirmPromptNo">❌ Non</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- PHONE OVERLAY -->
+<div id="phoneOverlay" role="dialog" aria-modal="true" aria-label="Téléphone mobile">
+  <div class="phone-frame">
+    <div class="phone-notch"></div>
+    <div class="phone-status">
+      <span id="phoneTime">12:00</span>
+      <span id="phoneSignal">📶 4G</span>
+      <span id="phoneAirplane">✈️</span>
+    </div>
+    <div class="phone-screen" id="phoneScreen">
+      <div id="phoneHome">
+        <h3>📱 CityPhone</h3>
+        <div class="app-grid">
+          <div class="app-icon" data-app="contacts" tabindex="0" role="button" aria-label="Contacts"><div class="icon">👥</div><span>Contacts</span></div>
+          <div class="app-icon" data-app="messages" tabindex="0" role="button" aria-label="Messages"><div class="icon">💬</div><span>Messages</span></div>
+          <div class="app-icon" data-app="call" tabindex="0" role="button" aria-label="Appeler"><div class="icon">📞</div><span>Appeler</span></div>
+          <div class="app-icon" data-app="garage" tabindex="0" role="button" aria-label="Garage"><div class="icon">🚗</div><span>Garage</span></div>
+          <div class="app-icon" data-app="map" tabindex="0" role="button" aria-label="Carte"><div class="icon">🗺️</div><span>Carte</span></div>
+          <div class="app-icon" data-app="talkie" tabindex="0" role="button" aria-label="Talkie-walkie"><div class="icon">📻</div><span>Talkie</span></div>
+          <div class="app-icon" data-app="missions" tabindex="0" role="button" aria-label="Missions"><div class="icon">🎯</div><span>Missions</span></div>
+          <div class="app-icon" data-app="bank" tabindex="0" role="button" aria-label="Banque"><div class="icon">🏦</div><span>Banque</span></div>
+          <div class="app-icon" data-app="places" tabindex="0" role="button" aria-label="Lieux utiles"><div class="icon">📍</div><span>Lieux utiles</span></div>
+          <div class="app-icon" data-app="myplaces" tabindex="0" role="button" aria-label="Mes lieux enregistrés"><div class="icon">📌</div><span>Mes lieux</span></div>
+          <div class="app-icon" data-app="mynumbers" tabindex="0" role="button" aria-label="Mes numéros de téléphone"><div class="icon">📟</div><span>Mes numéros</span></div>
+          <div class="app-icon" data-app="news" tabindex="0" role="button" aria-label="Actualités publiées par les journalistes"><div class="icon">📰</div><span>Actualités</span></div>
+          <div class="app-icon" data-app="citymap" tabindex="0" role="button" aria-label="Carte de la ville"><div class="icon">🗺️</div><span>Carte</span></div>
+          <div class="app-icon" data-app="jobs" tabindex="0" role="button" aria-label="Métiers"><div class="icon">🛡️</div><span>Métiers</span></div>
+          <div class="app-icon" data-app="settings" tabindex="0" role="button" aria-label="Réglages"><div class="icon">⚙️</div><span>Réglages</span></div>
+        </div>
+        <div style="margin-top:18px; text-align:center;">
+          <button class="phone-btn" id="phoneVoiceBtn">🎙️ Voix directe</button>
+          <button class="phone-btn" id="phoneAirplaneBtn">Mode avion</button>
+          <button class="phone-btn" id="closePhone">Fermer</button>
+        </div>
+      </div>
+      <div id="phoneApp" style="display:none;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- COMPUTER OVERLAY -->
+<div id="computerOverlay" role="dialog" aria-modal="true" aria-label="Ordinateur">
+  <div class="computer-frame">
+    <div class="computer-top">
+      <div class="dot" style="background:#ff5f56;"></div>
+      <div class="dot" style="background:#ffbd2e;"></div>
+      <div class="dot" style="background:#27c93f;"></div>
+      <span id="computerTitle" style="margin-left:8px; font-size:0.85rem; color:var(--muted);">CITY_OS v2.1</span>
+      <button id="closeComputer" style="margin-left:auto; background:#3a1a1a; color:#fff; border:1px solid var(--border); border-radius:6px; padding:4px 10px; cursor:pointer;">Fermer</button>
+    </div>
+    <div class="computer-screen">
+      <div class="computer-sidebar">
+        <button data-cmd="help">❓ Aide</button>
+        <button data-cmd="files">📁 Fichiers</button>
+        <button data-cmd="network">🌐 Réseau</button>
+        <button data-cmd="hack">💻 Pirater</button>
+        <button data-cmd="bank">🏦 Banque</button>
+        <button data-cmd="logs">📋 Logs</button>
+      </div>
+      <div class="computer-main" id="computerMain">
+        <div class="terminal" id="computerTerminal">Bienvenue sur CITY_OS. Tapez une commande ou choisissez un menu.</div>
+        <div class="computer-input">
+          <input type="text" id="computerInput" placeholder="Commande..." aria-label="Commande terminal">
+          <button id="computerRun">Exécuter</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SHOP DIALOG -->
+<div id="shopDialog" role="dialog" aria-modal="true" aria-label="Magasin">
+  <div class="shop-frame">
+    <div class="shop-header">
+      <h3 id="shopName">Magasin</h3>
+      <button id="closeShop" style="background:#3a1a1a; color:#fff; border:1px solid var(--border); border-radius:8px; padding:6px 12px; cursor:pointer;">Fermer</button>
+    </div>
+    <p id="shopMoney" style="color:var(--good); font-size:0.85rem; margin-bottom:10px;"></p>
+    <div class="shop-list" id="shopList"></div>
+  </div>
+</div>
+
+<div class="layout">
+  <div class="panel">
+    <h2>📋 Journal</h2>
+    <div id="log" role="log" aria-live="off"></div>
+  </div>
+  <div class="panel">
+    <h2>🎮 Commandes & état</h2>
+    <ul class="controls-list">
+      <li><strong>M</strong> : menu principal</li>
+      <li><strong>V</strong> : commande vocale</li>
+      <li><strong>W</strong> : scanner</li>
+      <li><strong>Maj+V</strong> : micro de proximité (bascule)</li>
+      <li><strong>Ctrl+V</strong> (maintenir) : parler au talkie (voix réelle)</li>
+      <li><strong>E</strong> : interagir</li>
+      <li><strong>T</strong> : tirer</li>
+      <li><strong>G</strong> : arme</li>
+      <li><strong>R</strong> : recharger</li>
+      <li><strong>O</strong> : garage</li>
+      <li><strong>N</strong> : inventaire</li>
+      <li><strong>I</strong> : position</li>
+      <li><strong>H</strong> : aide</li>
+    </ul>
+    <div class="status-line"><strong>Mode :</strong> <span id="modeStatus">à pied</span></div>
+    <div class="status-line"><strong>Véhicule :</strong> <span id="vehStatus">aucun</span></div>
+    <div class="status-line"><strong>Cap :</strong> <span id="compassStatus">sud</span></div>
+    <div class="status-line"><strong>Altitude :</strong> <span id="altStatus">0 m</span></div>
+    <div class="status-line"><strong>Arme :</strong> <span id="weaponStatus">aucune</span></div>
+    <div class="status-line"><strong>Cible :</strong> <span id="targetStatus">aucune</span></div>
+    <div class="status-line"><strong>Visée :</strong> <span id="aimStatus">torse</span></div>
+    <div class="status-line"><strong>Conduite :</strong> <span id="driveStatus">manuelle</span></div>
+    <div class="status-line"><strong>Fréquence :</strong> <span id="freqStatus">87.5</span></div>
+
+    <div class="touch-grid" role="group" aria-label="Déplacement tactile">
+      <div></div>
+      <button class="touch-btn" data-dir="0,-1" aria-label="Nord">⬆</button>
+      <div></div>
+      <button class="touch-btn" data-dir="-1,0" aria-label="Ouest">⬅</button>
+      <button class="touch-btn primary" id="touchInteract" aria-label="Interagir ici">E</button>
+      <button class="touch-btn" data-dir="1,0" aria-label="Est">➡</button>
+      <div></div>
+      <button class="touch-btn" data-dir="0,1" aria-label="Sud">⬇</button>
+      <div></div>
+    </div>
+    <div class="touch-actions" role="group" aria-label="Actions rapides">
+      <button class="touch-btn" id="touchScan" aria-label="Scanner les alentours">📡 Scan</button>
+      <button class="touch-btn" id="touchShoot" aria-label="Tirer">🔫 Tir</button>
+      <button class="touch-btn info" id="touchGuide" aria-label="Guide vocal autour de moi">🧭 Guide</button>
+      <button class="touch-btn" id="touchInventory" aria-label="Lire mon inventaire">🎒 Sac</button>
+      <button class="touch-btn" id="touchMenu" aria-label="Ouvrir le menu principal">☰ Menu</button>
+      <button class="touch-btn mic-btn" id="touchProxMic" aria-label="Activer ou couper le micro pour parler aux gens autour de vous">🗣️ Micro</button>
+      <button class="touch-btn mic-btn" id="touchTalkieVoice" aria-label="Maintenir pour parler au talkie-walkie (voix réelle)">📻 Talkie voix</button>
+      <button class="touch-btn danger" id="touchBrake" aria-label="Frein / marche arrière">⏹ Frein</button>
+      <button class="touch-btn" id="touchCompass" aria-label="Ma position et cap">📍 Ici</button>
+    </div>
+  </div>
+</div>
+
+<div class="footer-credit">Blind City v18.0 — Accessibilité totale — Sons enregistrés, voix des PNJ et ambiances synthétisées en local.</div>
+
+<script src="js/audio-engine.js"></script>
+<script src="js/core-utils.js"></script>
+<script src="js/network.js"></script>
+<script src="js/catalogs.js"></script>
+<script src="js/city.js"></script>
+<script src="js/game.js"></script>
+<script src="js/menus-and-ui.js"></script>
+<script src="js/voice-and-proximity.js"></script>
+<script src="js/phone-computer.js"></script>
+<script src="js/roles-staff.js"></script>
+<script src="js/police-and-startup.js"></script>
+</body>
+</html>
