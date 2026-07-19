@@ -1,5 +1,4 @@
-# Données du serveur contenant des secrets — ne jamais publier
-staff-data.json
+# Données joueurs (mots de passe hachés) — générées au fil du jeu, jamais publiées
 accounts-data.json
 
 # Dépendances Node
