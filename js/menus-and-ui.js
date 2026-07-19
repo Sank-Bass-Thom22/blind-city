@@ -1,0 +1,988 @@
+function openTalkieMenu() {
+  el('menuTitle').textContent = '📻 Talkie-walkie';
+  const t = Game.talkie;
+  const items = [];
+  if (!t.owned) {
+    items.push({ id: 'buy', title: '🛒 Acheter un talkie-walkie', desc: 'Prix : 45 000 FCFA. Batterie livrée pleine.' });
+  } else {
+    items.push({ id: 'power', title: t.on ? '🔴 Éteindre' : '🟢 Allumer', desc: `Batterie : ${Math.round(t.battery * 100)}%. Fréquence : ${t.frequency.toFixed(3)} MHz.` });
+    items.push({ id: 'freq', title: '🔢 Régler la fréquence', desc: 'Ouvrir le pavé numérique pour composer une nouvelle fréquence.' });
+    items.push({ id: 'ptt', title: '🎙️ Parler (PTT)', desc: t.on ? 'Émettre un message sur la fréquence actuelle.' : 'Allumez d\'abord le talkie.' });
+    items.push({ id: 'charge', title: '🔋 Recharger', desc: 'Dans un magasin ou une station-service, contre de l\'argent.' });
+    items.push({ id: 'give', title: '🤝 Donner à la cible verrouillée', desc: 'Confier le talkie pour qu\'une autre personne règle la fréquence à votre place.' });
+  }
+  renderMenu(items, (it) => {
+    if (it.id === 'buy') { Game.buyTalkie(); closeMenu(); }
+    else if (it.id === 'power') { Game.toggleTalkiePower(); openTalkieMenu(); }
+    else if (it.id === 'freq') { closeMenu(); FreqPicker.open(Game.talkie.frequency, (f) => Game.setTalkieFrequency(f)); }
+    else if (it.id === 'ptt') { closeMenu(); AccessibleTextPrompt.open('Message talkie-walkie', 'Message à transmettre, facultatif.', '', (msg) => Game.talkiePTT(msg)); }
+    else if (it.id === 'charge') { Game.chargeTalkie(); closeMenu(); }
+    else if (it.id === 'give') { Game.giveTalkie(); closeMenu(); }
+  });
+  el('menuOverlay').style.display = 'flex';
+}
+function openInventoryMenu() {
+  el('menuTitle').textContent = '🎒 Inventaire';
+  const items = Game.inventory.map(it => ({
+    id: it.id, title: `${it.name}${(it.q || 1) > 1 ? ' ×' + it.q : ''}`,
+    desc: it.category ? `Catégorie : ${it.category}.` : 'Objet transportable.',
+  }));
+  if (!items.length) items.push({ id: 'empty', title: 'Inventaire vide', desc: 'Vous ne portez rien pour le moment.' });
+  renderMenu(items, (it) => { if (it.id !== 'empty') openItemActionMenu(it.id); });
+  el('menuOverlay').style.display = 'flex';
+}
+function openItemActionMenu(itemId) {
+  const it = Game.inventory.find(i => i.id === itemId);
+  if (!it) return openInventoryMenu();
+  const qty = it.q || 1;
+  el('menuTitle').textContent = `${it.name}${qty > 1 ? ' ×' + qty : ''}`;
+  const actions = [
+    { id: 'use', title: '🖐️ Utiliser / Porter', desc: 'Utiliser, porter ou consommer cet objet.' },
+    { id: 'give', title: '🤝 Donner', desc: qty > 1 ? `Choisir la quantité à donner (jusqu'à ${qty}) à la cible verrouillée.` : 'Donner l\'objet à la cible verrouillée.' },
+    { id: 'drop', title: '⬇️ Déposer au sol', desc: qty > 1 ? `Choisir la quantité à déposer (jusqu'à ${qty}).` : 'Déposer l\'objet au sol.' },
+    { id: 'back', title: '↩️ Retour à l\'inventaire', desc: 'Revenir à la liste des objets.' },
+  ];
+  renderMenu(actions, (a) => {
+    if (a.id === 'back') { openInventoryMenu(); return; }
+    if (a.id === 'use') { Game.useItem(itemId); closeMenu(); return; }
+    if (a.id === 'give') {
+      if (qty > 1) QtyPicker.open(`Donner ${it.name}`, qty, (n) => { Game.giveItem(itemId, null, n); });
+      else Game.giveItem(itemId, null, 1);
+      closeMenu(); return;
+    }
+    if (a.id === 'drop') {
+      if (qty > 1) QtyPicker.open(`Déposer ${it.name}`, qty, (n) => { Game.dropItem(itemId, n); });
+      else Game.dropItem(itemId, 1);
+      closeMenu(); return;
+    }
+  });
+}
+function openMainMenu() {
+  el('menuTitle').textContent = 'Menu principal';
+  const items = [
+    { id: 'vehicles', title: '🚗 Véhicules', desc: 'Garage, conduite automatique, acheter/vente.' },
+    { id: 'weapons', title: '🔫 Armes', desc: 'Équiper, recharger, acheter munitions.' },
+    { id: 'inventory', title: '🎒 Inventaire', desc: 'Consulter, utiliser, vendre, donner ou déposer vos objets.' },
+    { id: 'missions', title: '🎯 Missions', desc: 'Voir et activer des missions.' },
+    { id: 'shops', title: '🛒 Boutiques', desc: 'Magasins, marché noir, concessionnaire.' },
+    { id: 'talkie', title: '📻 Talkie-walkie', desc: 'Acheter, allumer, régler la fréquence, recharger, parler.' },
+    { id: 'rptalk', title: '💬 Parler (RP)', desc: 'Dire un message audible par les joueurs réels proches de vous.' },
+    { id: 'map', title: '🗺️ Carte', desc: 'Liste des lieux et navigation.' },
+    { id: 'places', title: '📍 Lieux utiles', desc: 'Station-service la plus proche, boutique de vêtements, restaurant.' },
+    { id: 'helmet', title: '🪖 Acheter un casque', desc: 'Protection contre un tir ou un coup à la tête, sinon mortel.' },
+    { id: 'vest', title: '🦺 Acheter un gilet pare-balles', desc: 'Réduit les dégâts d\'un tir au corps.' },
+    { id: 'burnerphone', title: '📱 Acheter un téléphone prépayé', desc: 'Un numéro de plus, renommable.' },
+    { id: 'role', title: '🛡️ Métiers', desc: 'Demander un métier : police, médecin, garagiste, concessionnaire, agent immobilier, avocat, mineur...' },
+    { id: 'outfit', title: '🧥 Ma tenue', desc: 'Ce que vous portez actuellement (haut, bas, chaussures, accessoires).' },
+    { id: 'admin', title: '🛠️ Administration', desc: 'Mode staff : approuver les métiers, nommer des recruteurs.' },
+    { id: 'save', title: '💾 Sauvegarder', desc: 'Enregistrer la partie.' },
+    { id: 'bills', title: '🧾 Mes factures', desc: `Factures reçues à payer${Game.pendingBills.length ? ' (' + Game.pendingBills.length + ' en attente)' : ''}.` },
+    { id: 'paycash', title: '💵 Payer en liquide', desc: 'Donner de l\'argent directement, ou le déposer au sol pour que l\'autre le ramasse.' },
+    { id: 'realtaxi', title: '🚕 Appeler un vrai chauffeur', desc: 'Un joueur réel chauffeur professionnel viendra vous chercher, s\'il accepte.' },
+    { id: 'callmechanic', title: '🔧 Appeler un garagiste', desc: 'Pour venir réparer votre véhicule sur place. Montez d\'abord dedans.' },
+    { id: 'help', title: '❓ Aide', desc: 'Rappel vocal de toutes les commandes du jeu.' },
+  ];
+  if (['police', 'medecin', 'mecanicien', 'mineur_pro'].includes(Roles.current)) {
+    items.splice(items.length - 1, 0, { id: 'myjob', title: '🧰 Menu de mon métier', desc: 'Actions propres à votre métier actuel.' });
+  }
+  if (Game.inWater) {
+    items.push({ id: 'dive', title: '🌊 Plonger / remonter', desc: 'Basculer entre nager en surface et sous l\'eau.' });
+  }
+  renderMenu(items, handleMenuItem);
+  el('menuOverlay').style.display = 'flex';
+  announce('Menu principal ouvert. Choisissez une rubrique.', 'polite');
+}
+function renderMenu(items, handler) {
+  const c = el('menuContent'); c.innerHTML = '';
+  items.forEach((it, i) => {
+    const card = document.createElement('div'); card.className = 'menu-card'; card.tabIndex = 0; card.setAttribute('role', 'button');
+    card.innerHTML = `<h4>${it.title}</h4><p>${it.desc}</p>`;
+    card.addEventListener('click', () => handler(it));
+    card.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handler(it); } });
+    c.appendChild(card);
+  });
+  const first = c.querySelector('.menu-card');
+  if (first) setTimeout(() => first.focus(), 30);
+  announceTouchLabels();
+}
+function handleMenuItem(it) {
+  if (it.id === 'vehicles') openVehicleMenu();
+  else if (it.id === 'weapons') openWeaponsMenu();
+  else if (it.id === 'inventory') { openInventoryMenu(); }
+  else if (it.id === 'missions') { Game.openMissions(); closeMenu(); }
+  else if (it.id === 'shops') openShopsMenu();
+  else if (it.id === 'talkie') { openTalkieMenu(); }
+  else if (it.id === 'rptalk') { Game.rpTalk(); closeMenu(); }
+  else if (it.id === 'map') openMapMenu();
+  else if (it.id === 'help') { Game.help(); closeMenu(); }
+  else if (it.id === 'role') { openRoleMenu(); }
+  else if (it.id === 'places') { openNearestMenu(); }
+  else if (it.id === 'outfit') { Game.customizeAppearance(); }
+  else if (it.id === 'admin') { openAdminMenu(); }
+  else if (it.id === 'save') { Game.save(); closeMenu(); }
+  else if (it.id === 'helmet') { Game.buyHelmet(); closeMenu(); }
+  else if (it.id === 'vest') { Game.buyVest(); closeMenu(); }
+  else if (it.id === 'burnerphone') { Game.buyBurnerPhone(); closeMenu(); }
+  else if (it.id === 'dive') { Game.diveInWater(); closeMenu(); }
+  else if (it.id === 'myjob') { Game.openMyJobMenu(); }
+  else if (it.id === 'bills') { Game.openMyBills(); }
+  else if (it.id === 'paycash') { Game.openPayCashMenu(); }
+  else if (it.id === 'realtaxi') { closeMenu(); Game.callRealTaxiDriver(); }
+  else if (it.id === 'callmechanic') { closeMenu(); Game.callMechanic(); }
+}
+function closeMenu() { el('menuOverlay').style.display = 'none'; document.activeElement?.blur(); }
+function openRoleMenu() {
+  el('menuTitle').textContent = 'Métiers de la ville';
+  const items = Object.entries(Roles.list).filter(([k, v]) => !v.hidden).map(([k, v]) => ({
+    id: k, title: v.name,
+    desc: v.free ? 'Rôle libre, aucune validation nécessaire.' : `Compétences : ${v.perms.join(', ')}. Nécessite la validation d'un administrateur ou d'un recruteur habilité.`
+  }));
+  if (Roles.pending) items.unshift({ id: 'pending_info', title: `⏳ Candidature en attente : ${Roles.list[Roles.pending.role].name}`, desc: 'Un administrateur ou un recruteur doit encore valider votre demande.' });
+  if (StaffMode.active && Roles.pending) {
+    items.push({ id: 'approve', title: '✅ Approuver (staff)', desc: 'Valider la candidature en attente.' });
+    items.push({ id: 'reject', title: '❌ Refuser (staff)', desc: 'Refuser la candidature en attente.' });
+  }
+  renderMenu(items, (it) => {
+    if (it.id === 'pending_info') return;
+    if (it.id === 'approve') { Roles.approve(); closeMenu(); return; }
+    if (it.id === 'reject') { Roles.reject(); closeMenu(); return; }
+    Roles.applyFor(it.id); closeMenu();
+  });
+}
+function openNearestMenu() {
+  el('menuTitle').textContent = 'Lieux utiles les plus proches';
+  const types = [
+    { type: 'station_essence', label: '⛽ Station-service (essence + recharge électrique)' },
+    { type: 'vetements', label: '👕 Boutique de vêtements' },
+    { type: 'restaurant', label: '🍽️ Restaurant' },
+  ];
+  const items = types.map(t => {
+    const list = City.pois.filter(p => p.type === t.type).map(p => ({ ...p, dist: UTIL.dist(p, Game) })).sort((a, b) => a.dist - b.dist);
+    const nearest = list[0];
+    return nearest
+      ? { id: nearest.id, title: t.label, desc: `${nearest.name}, ${Math.round(nearest.dist)} m, cap ${UTIL.bearing(nearest.x - Game.x, nearest.y - Game.y)}.` }
+      : { id: 'none_' + t.type, title: t.label, desc: 'Aucun lieu de ce type dans la ville pour le moment.' };
+  });
+  renderMenu(items, (it) => {
+    const poi = City.pois.find(p => p.id === it.id);
+    if (poi) { Game.setAutoDrive(poi.type, poi.name); announce(`Direction ${poi.name}.`, 'assertive'); }
+    closeMenu();
+  });
+}
+function openAdminMenu() {
+  el('menuTitle').textContent = 'Administration (mode staff)';
+  const items = [];
+  items.push({ id: 'toggle', title: StaffMode.active ? '🔓 Désactiver le mode staff' : '🔒 Activer le mode staff', desc: StaffMode.active ? `Actif (${StaffMode.role === 'principal' ? 'administrateur principal' : 'modérateur'}).` : 'Un code administrateur sera demandé.' });
+  if (StaffMode.active) {
+    items.push({ id: 'log', title: '📜 Journal d\'activité', desc: `${StaffMode.log.length} évènement(s) récent(s) : connexions, changements de métier, crimes signalés...` });
+    items.push({ id: 'testrole', title: '🧪 Tester un métier', desc: 'Basculer temporairement sur n\'importe quel métier pour reproduire un bug signalé.' });
+    items.push({ id: 'cheats', title: '🛠️ Accès total aux fonctionnalités', desc: 'Argent, soin complet, arsenal, véhicule, téléportation — pour tout tester rapidement.' });
+    items.push({ id: 'citygrow', title: '🏗️ Agrandir la ville', desc: `Taille actuelle : ${City.W} × ${City.H}. Ajouter un quartier, un service (boutique, restaurant, garage...).` });
+    items.push({ id: 'ban', title: '🚫 Bannir un joueur connecté', desc: 'Coupe sa connexion et bloque son adresse pour l\'avenir.' });
+    if (StaffMode.role === 'principal') {
+      items.push({ id: 'unban', title: '🔓 Gérer les bannissements', desc: 'Voir et lever les bannissements existants.' });
+      items.push({ id: 'codes', title: '🔑 Changer les codes admin', desc: 'Réservé à l\'administrateur principal.' });
+    }
+    items.push({ id: 'pending', title: '📋 Candidature en attente', desc: Roles.pending ? `${Roles.pending.applicant} demande : ${Roles.list[Roles.pending.role].name}.` : 'Aucune candidature en attente.' });
+    if (Roles.pending) {
+      items.push({ id: 'approve', title: '✅ Approuver la candidature', desc: 'Valide le métier demandé.' });
+      items.push({ id: 'reject', title: '❌ Refuser la candidature', desc: 'Refuse le métier demandé.' });
+    }
+    items.push({ id: 'recruiter', title: '🧑‍💼 Nommer un recruteur', desc: 'Autoriser une personne à valider les candidatures d\'un métier précis (chaque patron peut recruter ses employés).' });
+    items.push({ id: 'pendingaccounts', title: '🎭 Comptes en attente (entretien RP)', desc: 'Voir les nouveaux comptes dont l\'entretien RP n\'a pas été assez concluant, et décider de les accepter ou non.' });
+  }
+  renderMenu(items, (it) => {
+    if (it.id === 'toggle') {
+      if (StaffMode.active) { StaffMode.toggle(); closeMenu(); }
+      else { closeMenu(); AccessibleTextPrompt.open('Code administrateur', 'Saisissez le code du mode staff.', '', (code) => { if (code) StaffMode.toggle(code); }); }
+    } else if (it.id === 'log') { openStaffLogMenu(); }
+    else if (it.id === 'testrole') { openStaffRoleTestMenu(); }
+    else if (it.id === 'cheats') { openStaffCheatMenu(); }
+    else if (it.id === 'citygrow') { openStaffCityMenu(); }
+    else if (it.id === 'ban') { openStaffBanMenu(); }
+    else if (it.id === 'unban') { openStaffUnbanMenu(); }
+    else if (it.id === 'codes') { openStaffCodeMenu(); }
+    else if (it.id === 'approve') { Roles.approve(); closeMenu(); }
+    else if (it.id === 'reject') { Roles.reject(); closeMenu(); }
+    else if (it.id === 'recruiter') {
+      closeMenu();
+      AccessibleTextPrompt.open('Identifiant du métier', 'Exemples : concessionnaire, agent_immo, avocat, mecanicien, medecin, mineur_pro, police.', '', (role) => {
+        if (!role || !Roles.list[role]) return announce('Métier inconnu.', 'assertive');
+        AccessibleTextPrompt.open('Nom du recruteur', 'Nom de la personne à nommer recruteur pour ce métier.', '', (name) => {
+          if (name) Roles.appointRecruiter(role, name);
+        });
+      });
+    }
+    else if (it.id === 'pendingaccounts') { openStaffPendingAccountsMenu(); }
+  });
+}
+function openStaffPendingAccountsMenu() {
+  if (!Net.connected) { closeMenu(); return announce('Nécessite une connexion au serveur.', 'assertive'); }
+  Net.send({ type: 'staff_list_pending_accounts' });
+  Net._pendingAccountsCallback = (accounts) => {
+    el('menuTitle').textContent = 'Comptes en attente';
+    if (!accounts.length) { renderMenu([{ id: 'empty', title: 'Aucun compte en attente', desc: '' }], () => {}); return; }
+    const items = accounts.map(a => ({
+      id: a.username,
+      title: `${a.realFirstName} ${a.realLastName} (@${a.username})`,
+      desc: `Entretien RP : ${a.rpScore}/${a.rpTotal}.`,
+    }));
+    renderMenu(items, (sel) => {
+      el('menuTitle').textContent = `Compte @${sel.id}`;
+      const subItems = [
+        { id: 'approve', title: '✅ Approuver', desc: 'Le compte pourra se connecter.' },
+        { id: 'reject', title: '❌ Rejeter', desc: 'Le compte restera bloqué.' },
+        { id: 'back', title: '↩️ Retour', desc: '' },
+      ];
+      renderMenu(subItems, (sub) => {
+        if (sub.id === 'back') return openStaffPendingAccountsMenu();
+        if (sub.id === 'approve' || sub.id === 'reject') {
+          Net.send({ type: 'staff_review_account', username: sel.id, approve: sub.id === 'approve' });
+          closeMenu();
+        }
+      });
+    });
+  };
+}
+const DISTRICT_TYPES = {
+  residentiel: 'Résidentiel', commercial: 'Commercial', industriel: 'Industriel',
+  centre: 'Centre-ville', parc: 'Parc', ghetto: 'Quartier chaud', port: 'Portuaire',
+  aeroport: 'Aéroport', mine: 'Zone minière',
+};
+const SERVICE_TYPES = {
+  magasin: 'Boutique / magasin', restaurant: 'Restaurant', garage: 'Garage / concession auto',
+  banque: 'Banque', hopital: 'Hôpital', police: 'Commissariat de police',
+  prison: 'Prison', immeuble: 'Immeuble (logements)',
+};
+// Applique une modification de ville (agrandissement, quartier, service),
+// que ce soit localement (solo) ou reçue du serveur (multijoueur, pour que
+// tout le monde voie exactement les mêmes changements).
+function applyCityEdit(op, payload) {
+  if (op === 'grow') City.growCity(payload.extra, payload.direction);
+  else if (op === 'addDistrict') City.addDistrict(payload.name, payload.type, payload.x1, payload.y1, payload.x2, payload.y2);
+  else if (op === 'addPOI') City.addPOI(payload.name, payload.type, payload.districtName, payload.floors);
+}
+// Envoie une modification de ville : au serveur si connecté (persisté et
+// diffusé à tous les joueurs), sinon appliquée seulement localement (solo).
+function sendCityEdit(op, payload) {
+  if (Net.connected) Net.send({ type: 'city_edit', op, payload });
+  else applyCityEdit(op, payload);
+}
+window.applyCityEdit = applyCityEdit; window.sendCityEdit = sendCityEdit;
+
+// Même principe que les modifications de ville, mais pour les objets du monde
+// qui changent par le jeu normal (achat de véhicule/maison, stationnement...) :
+// accessible à tout joueur, pas seulement au staff.
+function applyWorldEdit(op, payload) {
+  if (op === 'vehicle_create') {
+    if (!City.vehicles.find(v => v.id === payload.id)) City.vehicles.push({ ...payload, inventory: payload.inventory || [], passengers: [], openDoors: new Set() });
+  } else if (op === 'vehicle_position') {
+    const v = City.vehicles.find(v => v.id === payload.id);
+    if (v) { v.x = payload.x; v.y = payload.y; if (typeof payload.locked === 'boolean') v.locked = payload.locked; }
+  } else if (op === 'vehicle_lock') {
+    const v = City.vehicles.find(v => v.id === payload.id);
+    if (v) v.locked = payload.locked;
+  } else if (op === 'house_owner') {
+    const h = City.houses.find(h => h.id === payload.id);
+    if (h) h.owner = payload.owner;
+  } else if (op === 'house_keys') {
+    const h = City.houses.find(h => h.id === payload.id);
+    if (h) h.authorizedUsers = payload.authorizedUsers;
+  } else if (op === 'vehicle_remove') {
+    const idx = City.vehicles.findIndex(v => v.id === payload.id);
+    if (idx !== -1) City.vehicles.splice(idx, 1);
+  }
+}
+function sendWorldEdit(op, payload) {
+  if (Net.connected) Net.send({ type: 'world_edit', op, payload });
+}
+window.applyWorldEdit = applyWorldEdit; window.sendWorldEdit = sendWorldEdit;
+
+function openStaffCityMenu() {
+  el('menuTitle').textContent = `Agrandissement de la ville (${City.W} × ${City.H})`;
+  const items = [
+    { id: 'grow', title: '📐 Étendre la carte', desc: 'Ajoute de l\'espace neuf à l\'est ou au sud de la ville, pour pouvoir y bâtir un nouveau quartier.' },
+    { id: 'district', title: '🏘️ Ajouter un quartier', desc: `${City.districts.length} quartier(s) existant(s). Choisissez un type et une zone.` },
+    { id: 'service', title: '🏪 Ajouter un service (boutique, restaurant, garage...)', desc: 'Placé dans un quartier existant ou nouvellement ajouté.' },
+    { id: 'list', title: '📋 Voir les quartiers existants', desc: 'Liste des quartiers et leurs coordonnées.' },
+  ];
+  renderMenu(items, (it) => {
+    if (it.id === 'grow') openStaffGrowMenu();
+    else if (it.id === 'district') openStaffAddDistrictMenu();
+    else if (it.id === 'service') openStaffAddServiceMenu();
+    else if (it.id === 'list') openStaffDistrictListMenu();
+  });
+}
+function openStaffGrowMenu() {
+  el('menuTitle').textContent = 'Étendre la carte';
+  const items = [
+    { id: 'est', title: '➡️ Étendre vers l\'est', desc: `Largeur actuelle : ${City.W}. Ajoute de l'espace à droite de la carte.` },
+    { id: 'sud', title: '⬇️ Étendre vers le sud', desc: `Hauteur actuelle : ${City.H}. Ajoute de l'espace en bas de la carte.` },
+  ];
+  renderMenu(items, (it) => {
+    closeMenu();
+    AccessibleTextPrompt.open('Étendre la carte', 'Combien de cases ajouter ? Exemple : 60.', '60', (amountStr) => {
+      const amount = parseInt(amountStr, 10);
+      if (!amount || amount < 10) return announce('Valeur invalide (minimum 10).', 'assertive');
+      const wasConnected = Net.connected;
+      sendCityEdit('grow', { extra: amount, direction: it.id });
+      const label = it.id === 'sud' ? 'vers le sud' : 'vers l\'est';
+      announce(wasConnected
+        ? `Demande d'agrandissement ${label} envoyée (${amount} cases) — appliquée pour tous les joueurs connectés.`
+        : `Ville agrandie ${label}. Nouvelle taille : ${City.W} × ${City.H}.`, 'assertive');
+    });
+  });
+}
+function openStaffAddDistrictMenu() {
+  el('menuTitle').textContent = 'Ajouter un quartier — choisir le type';
+  const items = Object.entries(DISTRICT_TYPES).map(([id, label]) => ({ id, title: label, desc: `Créer un quartier de type ${label}.` }));
+  renderMenu(items, (typeSel) => {
+    closeMenu();
+    AccessibleTextPrompt.open('Nom du nouveau quartier', '', DISTRICT_TYPES[typeSel.id], (name) => {
+      if (!name) return;
+      AccessibleTextPrompt.open(
+        'Coordonnées du quartier',
+        `Format x1,y1,x2,y2. La carte fait actuellement ${City.W} × ${City.H} : utilisez l'espace ajouté via "Étendre la carte" si besoin.`,
+        `${City.W - 60},10,${City.W - 10},70`,
+        (coords) => {
+          if (!coords) return;
+          const [x1, y1, x2, y2] = coords.split(',').map(s => parseInt(s.trim(), 10));
+          if ([x1, y1, x2, y2].some(n => isNaN(n)) || x2 <= x1 || y2 <= y1) return announce('Coordonnées invalides.', 'assertive');
+          if (x2 >= City.W || y2 >= City.H) return announce(`Ces coordonnées dépassent la taille actuelle de la carte (${City.W} × ${City.H}). Étendez d'abord la carte.`, 'assertive');
+          const wasConnected = Net.connected;
+          sendCityEdit('addDistrict', { name, type: typeSel.id, x1, y1, x2, y2 });
+          announce(wasConnected
+            ? `Demande d'ajout du quartier "${name}" envoyée — appliquée pour tous les joueurs connectés.`
+            : `Quartier "${name}" (${DISTRICT_TYPES[typeSel.id]}) créé, de (${x1},${y1}) à (${x2},${y2}).`, 'assertive');
+        }
+      );
+    });
+  });
+}
+function openStaffAddServiceMenu() {
+  el('menuTitle').textContent = 'Ajouter un service — choisir le type';
+  const items = Object.entries(SERVICE_TYPES).map(([id, label]) => ({ id, title: label, desc: `Placer un(e) ${label.toLowerCase()}.` }));
+  renderMenu(items, (typeSel) => {
+    const districtItems = City.districts.map(d => ({ id: d.name, title: d.name, desc: `Type : ${DISTRICT_TYPES[d.type] || d.type}.` }));
+    el('menuTitle').textContent = `Dans quel quartier placer : ${SERVICE_TYPES[typeSel.id]} ?`;
+    renderMenu(districtItems, (distSel) => {
+      closeMenu();
+      AccessibleTextPrompt.open(`Nom du service`, `Nom de ce/cette ${SERVICE_TYPES[typeSel.id].toLowerCase()}.`, SERVICE_TYPES[typeSel.id], (name) => {
+        if (!name) return;
+        const wasConnected = Net.connected;
+        sendCityEdit('addPOI', { name, type: typeSel.id, districtName: distSel.id });
+        announce(wasConnected
+          ? `Demande d'ajout de "${name}" envoyée dans le quartier ${distSel.id} — appliquée pour tous les joueurs connectés.`
+          : `"${name}" ajouté dans le quartier ${distSel.id}.`, 'assertive');
+      });
+    });
+  });
+}
+function openStaffDistrictListMenu() {
+  el('menuTitle').textContent = `Quartiers existants (${City.districts.length})`;
+  const items = City.districts.map(d => ({ id: d.name, title: d.name, desc: `Type : ${DISTRICT_TYPES[d.type] || d.type}. De (${d.x1},${d.y1}) à (${d.x2},${d.y2}).` }));
+  renderMenu(items, () => {});
+}
+function openStaffLogMenu() {
+  el('menuTitle').textContent = 'Journal d\'activité (staff)';
+  const items = StaffMode.log.length
+    ? StaffMode.log.slice(0, 40).map((entry, i) => ({ id: 'e' + i, title: new Date(entry.time).toLocaleTimeString('fr-FR'), desc: entry.text }))
+    : [{ id: 'empty', title: 'Aucun évènement pour l\'instant', desc: 'Le journal se remplit en direct dès qu\'un joueur agit sur le serveur.' }];
+  renderMenu(items, () => {}); // lecture seule : chaque carte annonce juste son contenu au focus
+}
+function openStaffRoleTestMenu() {
+  el('menuTitle').textContent = 'Tester un métier';
+  const items = Object.keys(Roles.list).map(id => ({ id, title: Roles.list[id].name, desc: id === Roles.current ? 'Métier actuel.' : 'Basculer sur ce métier pour test.' }));
+  renderMenu(items, (it) => { Roles.set(it.id); closeMenu(); });
+}
+function openStaffCheatMenu() {
+  el('menuTitle').textContent = 'Accès total (staff)';
+  const items = [
+    { id: 'money', title: '💰 Ajouter de l\'argent', desc: 'Ajoute 500 000 FCFA à votre compte.' },
+    { id: 'heal', title: '❤️ Soin complet', desc: 'Rétablit votre santé au maximum.' },
+    { id: 'weapons', title: '🔫 Débloquer toutes les armes', desc: 'Ajoute chaque arme du jeu à votre inventaire.' },
+    { id: 'vehicle', title: '🚗 Faire apparaître un véhicule', desc: 'Fait apparaître une voiture juste à côté de vous.' },
+    { id: 'teleport', title: '📍 Téléportation', desc: 'Se téléporter à des coordonnées précises.' },
+    { id: 'wanted', title: '🚓 Remettre le niveau de recherche à zéro', desc: 'Efface votre niveau de recherche policière.' },
+  ];
+  renderMenu(items, (it) => {
+    if (it.id === 'money') { Game.money += 500000; announce('500 000 FCFA ajoutés.', 'assertive'); updateHud(); closeMenu(); }
+    else if (it.id === 'heal') { Game.health = 100; announce('Santé rétablie au maximum.', 'assertive'); updateHud(); closeMenu(); }
+    else if (it.id === 'weapons') {
+      Game.weapons = Game.weapons || [];
+      Object.keys(WEAPON_CATALOG || {}).forEach(w => { if (!Game.weapons.includes(w)) Game.weapons.push(w); });
+      announce('Toutes les armes ont été débloquées.', 'assertive');
+      updateHud(); closeMenu();
+    } else if (it.id === 'vehicle') {
+      closeMenu();
+      AccessibleTextPrompt.open('Type de véhicule', 'Exemples : berline, moto, camion.', 'berline', (type) => {
+        (Game.spawnStaffVehicle ? Game.spawnStaffVehicle(type || 'berline') : announce('Fonction de génération de véhicule indisponible.', 'assertive'));
+        updateHud();
+      });
+    } else if (it.id === 'teleport') {
+      closeMenu();
+      AccessibleTextPrompt.open('Téléportation', 'Coordonnées X,Y. Exemple : 120,120.', '', (coords) => {
+        if (coords) {
+          const [x, y] = coords.split(',').map(s => parseInt(s.trim(), 10));
+          if (!isNaN(x) && !isNaN(y)) { Game.x = x; Game.y = y; announce(`Téléporté en (${x}, ${y}).`, 'assertive'); }
+          else announce('Coordonnées invalides.', 'assertive');
+        }
+        updateHud();
+      });
+    } else if (it.id === 'wanted') { Game.wanted = 0; announce('Niveau de recherche remis à zéro.', 'assertive'); updateHud(); closeMenu(); }
+  });
+}
+function openStaffBanMenu() {
+  el('menuTitle').textContent = 'Bannir un joueur';
+  const items = Array.from(Net.remotePlayers.entries()).map(([pid, p]) => ({ id: pid, title: `${p.firstName} ${p.lastName}`, desc: `Identifiant ${pid}.` }));
+  if (!items.length) items.push({ id: 'empty', title: 'Aucun autre joueur connecté', desc: 'Il n\'y a personne à bannir pour le moment.' });
+  renderMenu(items, (it) => {
+    if (it.id === 'empty') { closeMenu(); return; }
+    closeMenu();
+    AccessibleTextPrompt.open('Bannissement', `Raison du bannissement de ${it.title} ?`, '', (reason) => {
+      Net.send({ type: 'staff_ban', targetId: it.id, reason: reason || '' });
+      announce(`Demande de bannissement envoyée pour ${it.title}.`, 'assertive');
+    });
+  });
+}
+function openStaffUnbanMenu() {
+  el('menuTitle').textContent = 'Bannissements en cours';
+  Net.send({ type: 'staff_list_bans' });
+  const items = (StaffMode.bansList || []).map((b, i) => ({ id: String(i), title: b.name, desc: `${b.reason} — banni par ${b.byName}. Sélectionner pour lever ce bannissement.` }));
+  if (!items.length) items.push({ id: 'empty', title: 'Aucun bannissement enregistré', desc: 'La liste se met à jour automatiquement.' });
+  renderMenu(items, (it) => {
+    if (it.id === 'empty') { closeMenu(); return; }
+    const ban = StaffMode.bansList[parseInt(it.id, 10)];
+    if (ban) Net.send({ type: 'staff_unban', ip: ban.ip });
+    closeMenu();
+  });
+}
+function openStaffCodeMenu() {
+  el('menuTitle').textContent = 'Changer les codes admin';
+  const items = [
+    { id: 'principal', title: '🔑 Code administrateur principal', desc: 'Change le code du niveau le plus élevé.' },
+    { id: 'moderateur', title: '🔑 Code modérateur', desc: 'Change le code du niveau modérateur.' },
+  ];
+  renderMenu(items, (it) => {
+    closeMenu();
+    AccessibleTextPrompt.open('Nouveau code', `Nouveau code pour "${it.id}", 6 caractères minimum.`, '', (newCode) => {
+      if (newCode) Net.send({ type: 'staff_change_code', which: it.id, newCode });
+    });
+  });
+}
+function openVehicleMenu() {
+  el('menuTitle').textContent = 'Véhicules';
+  const items = [
+    { id: 'garage', title: 'Sortir mon véhicule', desc: 'Faire sortir votre véhicule du garage.' },
+    { id: 'info', title: 'Infos véhicule', desc: 'Puissance, essence, état, portes, passagers.' },
+    { id: 'doors', title: 'Portes et coffre', desc: 'Ouvrir ou fermer les portes du véhicule proche.' },
+    { id: 'trunk', title: 'Coffre : objets', desc: 'Déposer ou récupérer un objet dans le coffre du véhicule où vous êtes.' },
+    { id: 'window', title: 'Vitre', desc: 'Monter ou descendre la vitre du véhicule où vous êtes.' },
+    { id: 'auto', title: 'Conduite automatique', desc: 'Choisir une destination et laisser le véhicule conduire.' },
+    { id: 'manual', title: 'Conduite manuelle', desc: 'Flèches pour avancer, tourner, freiner. Espace pour freiner.' },
+    { id: 'buy', title: 'Acheter un véhicule', desc: 'Concessionnaire : voitures, motos, avions, hélicoptères.' },
+  ];
+  if (Game.inVehicle && Game.vehicle?.type === 'char') items.push({ id: 'cannon', title: 'Tirer au canon', desc: 'Réservé au char d\'assaut, rechargement de 8 secondes.' });
+  renderMenu(items, (it) => {
+    if (it.id === 'garage') { Game.openGarage(); closeMenu(); }
+    else if (it.id === 'info') { Game.openVehicleMenu(); closeMenu(); }
+    else if (it.id === 'doors') { openVehicleDoorsMenu(); }
+    else if (it.id === 'trunk') { Game.openTrunkMenu(); }
+    else if (it.id === 'window') { Game.toggleWindow(); closeMenu(); }
+    else if (it.id === 'cannon') { Game.fireTankCannon(); closeMenu(); }
+    else if (it.id === 'auto') { Game.autoDriveMenu(); closeMenu(); }
+    else if (it.id === 'manual') { announce('Flèches pour conduire, espace pour freiner.', 'polite'); closeMenu(); }
+    else if (it.id === 'buy') { const poi = City.pois.find(p => p.type === 'concessionnaire'); if (poi) Game.openVehicleShop(poi); closeMenu(); }
+  });
+}
+function openVehicleDoorsMenu() {
+  el('menuTitle').textContent = 'Portes du véhicule';
+  const doors = ['porte_conducteur', 'porte_passager_avant_droit', 'porte_passager_avant_gauche', 'porte_passager_arriere_droit', 'porte_passager_arriere_gauche', 'coffre'];
+  const items = doors.map(d => ({ id: d, title: d.replace(/_/g, ' '), desc: 'Ouvrir ou fermer.' }));
+  renderMenu(items, (it) => { Game.openDoor(it.id); });
+}
+function openWeaponsMenu() {
+  el('menuTitle').textContent = 'Armes';
+  const items = Game.weapons.map((id, i) => {
+    const w = WEAPON_CATALOG[id];
+    return { id: 'w_' + i, title: w.name, desc: `Calibre ${w.caliber}, dégâts ${w.dmg}, chargeur ${Game.ammo[w.ammoType] || 0}/${w.magazine}, réserve ${Game.ammoReserve[w.ammoType] || 0}. ${w.legal ? 'Légal' : 'Non légal'}.`, weaponId: id };
+  });
+  if (!items.length) items.push({ id: 'none', title: 'Aucune arme', desc: 'Achetez une arme à l\'armurerie ou au marché noir.' });
+  items.push({ id: 'ammo_transfer', title: '📤 Donner ou déposer des munitions', desc: 'Transférer une partie de vos munitions à quelqu\'un d\'autre.' });
+  renderMenu(items, (it) => {
+    if (it.weaponId) { Game.selectWeapon(it.weaponId); closeMenu(); }
+    else if (it.id === 'ammo_transfer') { closeMenu(); Game.openAmmoTransferMenu(); }
+  });
+}
+function shopCategoryGroup(cat) {
+  if (['vetement', 'pantalon', 'chaussure', 'accessoire'].includes(cat)) return '👕 Vêtements';
+  if (['arme', 'munition', 'protection', 'outil', 'minerai'].includes(cat)) return '🛠️ Équipement';
+  if (['nourriture', 'boisson', 'medicament'].includes(cat)) return '🍔 Consommables';
+  if (cat === 'immobilier') return '🏠 Immobilier';
+  return '📦 Divers';
+}
+function openShopCategoryMenu(poi) {
+  const stock = Game.shopContext?.stock || poi.stock || [];
+  el('menuTitle').textContent = `🛒 ${poi.name}`;
+  const groups = {};
+  stock.forEach((it, i) => { const g = shopCategoryGroup(it.category); (groups[g] = groups[g] || []).push(i); });
+  const order = ['👕 Vêtements', '🛠️ Équipement', '🍔 Consommables', '🚗 Véhicules', '🏠 Immobilier', '📦 Divers'];
+  const items = order.filter(g => groups[g] && groups[g].length).map(g => ({ id: 'cat_' + g, title: g, desc: `${groups[g].length} article(s) disponible(s).` }));
+  if (!items.length) items.push({ id: 'empty', title: 'Boutique vide', desc: 'Aucun article en stock pour le moment.' });
+  renderMenu(items, (c) => { if (c.id !== 'empty') openShopCategoryItems(poi, groups, c.title); });
+  el('menuOverlay').style.display = 'flex';
+}
+function openShopCategoryItems(poi, groups, groupName) {
+  const stock = Game.shopContext?.stock || poi.stock || [];
+  const indices = groups[groupName] || [];
+  el('menuTitle').textContent = groupName;
+  const items = indices.map(i => {
+    const it = stock[i];
+    return { id: 'item_' + i, title: `${it.name}${it.q > 1 ? ' (stock ' + it.q + ')' : ''}`, desc: UTIL.formatMoney(it.price) };
+  });
+  items.push({ id: 'back', title: '↩️ Retour aux catégories', desc: 'Revenir à la liste des catégories.' });
+  renderMenu(items, (sel) => {
+    if (sel.id === 'back') { openShopCategoryMenu(poi); return; }
+    const idx = parseInt(sel.id.replace('item_', ''), 10) + 1; // buyItemQty attend un index 1-based
+    const it = stock[idx - 1];
+    if (it.q > 1) { closeMenu(); QtyPicker.open(`Acheter ${it.name}`, it.q, (n) => { Game.buyItemQty(idx, n); }); }
+    else { Game.buyItemQty(idx, 1); closeMenu(); }
+  });
+}
+function openVehicleCategoryMenu(poi, available) {
+  el('menuTitle').textContent = `🚗 ${poi.name}`;
+  const groups = {};
+  available.forEach((v, i) => { (groups[v.type] = groups[v.type] || []).push(i); });
+  const order = ['2 roues', '3 roues', '4 roues', 'moto', 'voiture', 'poids lourd', 'air'];
+  const items = order.filter(g => groups[g] && groups[g].length).map(g => ({ id: 'cat_' + g, title: `${vehicleCategoryIcon(g)} ${g}`, desc: `${groups[g].length} modèle(s) disponible(s).` }));
+  if (!items.length) items.push({ id: 'empty', title: 'Aucun véhicule disponible', desc: '' });
+  renderMenu(items, (c) => { if (c.id !== 'empty') openVehicleCategoryItems(poi, groups, c.id.replace('cat_', ''), available); });
+  el('menuOverlay').style.display = 'flex';
+}
+function vehicleCategoryIcon(type) {
+  return { '2 roues': '🚲', '3 roues': '🛺', '4 roues': '🏍️', moto: '🏍️', voiture: '🚗', 'poids lourd': '🚚', air: '🛩️' }[type] || '🚘';
+}
+function openVehicleCategoryItems(poi, groups, groupName, available) {
+  const indices = groups[groupName] || [];
+  el('menuTitle').textContent = `${vehicleCategoryIcon(groupName)} ${groupName}`;
+  const items = indices.map(i => {
+    const v = available[i];
+    const tag = v.restricted ? ' — Réservé police' : '';
+    return { id: 'veh_' + i, title: `${v.name}${tag} — ${UTIL.formatMoney(v.price)}`, desc: `${v.seats} place(s), coffre ${v.trunk}, ${v.electric ? 'électrique' : v.flies ? 'volant' : 'thermique'}.${v.restricted ? ' Achat réservé aux policiers en service, via le menu police.' : ''}` };
+  });
+  items.push({ id: 'back', title: '↩️ Retour aux catégories', desc: '' });
+  renderMenu(items, (sel) => {
+    if (sel.id === 'back') { openVehicleCategoryMenu(poi, available); return; }
+    const idx = parseInt(sel.id.replace('veh_', ''), 10) + 1; // buyVehicle attend un index 1-based
+    closeMenu();
+    Game.buyVehicle(idx);
+  });
+}
+function openShopsMenu() {
+  el('menuTitle').textContent = 'Boutiques';
+  const nearby = City.pois.filter(p => UTIL.dist(p, Game) < 40).sort((a, b) => UTIL.dist(a, Game) - UTIL.dist(b, Game)).slice(0, 10);
+  const items = nearby.map(p => ({ id: p.id, title: p.name, desc: `${p.type}, ${Math.round(UTIL.dist(p, Game) * CONFIG.METERS_PER_TILE)} m.` }));
+  if (!items.length) items.push({ id: 'none', title: 'Aucune boutique proche', desc: 'Déplacez-vous vers le centre-ville ou le sud.' });
+  renderMenu(items, (it) => { const poi = City.pois.find(p => p.id === it.id); if (poi) Game.enterPOI(poi); closeMenu(); });
+}
+function openMapMenu() {
+  el('menuTitle').textContent = 'Carte et lieux';
+  const items = City.pois.map(p => ({ id: p.id, title: p.name, desc: `${p.type}, ${Math.round(UTIL.dist(p, Game) * CONFIG.METERS_PER_TILE)} m, ${UTIL.bearing(p.x - Game.x, p.y - Game.y)}.` })).slice(0, 15);
+  renderMenu(items, (it) => { const poi = City.pois.find(p => p.id === it.id); if (poi) Game.setAutoDrive(poi.type, poi.name); closeMenu(); });
+}
+
+/* ============================================================
+   INPUT HANDLING — clavier, tactile, gestes
+============================================================ */
+function setupInput() {
+  // Keyboard
+  document.addEventListener('keydown', (e) => {
+    if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return; // ne pas capter les touches pendant une saisie de texte
+    if (e.repeat) return;
+    Game.keys.add(e.key.toLowerCase());
+    const key = e.key.toLowerCase();
+    if (key === 'arrowup') Game.moveForward();
+    else if (key === 'arrowdown') Game.moveBackward();
+    else if (key === 'arrowleft') Game.turn(-2);
+    else if (key === 'arrowright') Game.turn(2);
+    else if (key === ' ') { e.preventDefault(); Game.inVehicle ? Game.brakeVehicle() : Game.move(0, 1); }
+    else if (key === 'e') Game.interact();
+    else if (key === 'm') openMainMenu();
+    else if (key === 'v') toggleProxVoice(); // micro de proximité : bascule, on active puis on désactive
+    else if (key === 's' && !e.ctrlKey && !e.shiftKey && !e.altKey) talkieVoiceStart(); // talkie : maintenir pour parler
+    else if (key === 'w') Game.scan(); // 'q' est déjà pris par le déplacement à gauche (AZERTY)
+    else if (key === 't' && !e.shiftKey) Game.startBurst();
+    else if (key === 'r') Game.reload();
+    else if (key === 'g' && Game.lockedTarget) Game.changeAim(1); // visée tête/torse/jambes
+    else if (key === 'n') Game.announceInventory();
+    else if (key === 'i') Game.announceLocation();
+    else if (key === 'o') Game.openGarage();
+    else if (key === 'f') Game.soundRadar();
+    else if (key === 'h') Game.help();
+    else if (key === 'c') Game.soundCompass();
+    else if (key === 'u') { Game.toggleCuffs(); }
+    else if (key === 'j') { const live = Game.getLiveTarget(); if (live?.menotte || live?.knockedOut || live?.dead) Game.searchTarget(); else announce('Cible non fouillable : menottez ou assommez-la d\'abord.', 'assertive'); }
+    else if (key === 'pageup') { if (Game.inVehicle && VEHICLE_CATALOG[Game.vehicle.type].flies) { Game.altitude = Math.min(120, Game.altitude + 5); Game.vehicle.altitude = Game.altitude; announce('Altitude ' + Math.round(Game.altitude) + ' m.', 'polite'); } }
+    else if (key === 'pagedown') { if (Game.inVehicle && VEHICLE_CATALOG[Game.vehicle.type].flies) { Game.altitude = Math.max(0, Game.altitude - 5); Game.vehicle.altitude = Game.altitude; announce('Altitude ' + Math.round(Game.altitude) + ' m.', 'polite'); } }
+    else if (['1','2','3','4','5','6','7','8','9'].includes(key)) Game.target(parseInt(key, 10));
+    else if (key === '!') Game.setHeadingDirect(0); // Nord
+    else if (key === ';') Game.setHeadingDirect(2); // Est
+    else if (key === ',') Game.setHeadingDirect(4); // Sud
+    else if (key === ':') Game.setHeadingDirect(6); // Ouest
+    updateHud();
+  });
+  document.addEventListener('keyup', (e) => {
+    Game.keys.delete(e.key.toLowerCase());
+    if (e.key.toLowerCase() === 't') Game.stopBurst();
+    if (e.key.toLowerCase() === 's') talkieVoiceStop();
+  });
+
+  // Touch buttons
+  el('closeMenu').addEventListener('click', closeMenu);
+  el('qtyMinus').addEventListener('click', () => QtyPicker.change(-1));
+  el('qtyPlus').addEventListener('click', () => QtyPicker.change(1));
+  el('qtyMax').addEventListener('click', () => QtyPicker.setMax());
+  el('qtyConfirm').addEventListener('click', () => QtyPicker.confirm());
+  el('qtyCancel').addEventListener('click', () => QtyPicker.cancel());
+  // Pavé numérique tactile pour la fréquence du talkie-walkie
+  {
+    const grid = el('freqKeypad');
+    ['1','2','3','4','5','6','7','8','9','.','0','⌫'].forEach(ch => {
+      const b = document.createElement('button'); b.type = 'button'; b.textContent = ch;
+      b.setAttribute('aria-label', ch === '⌫' ? 'Effacer' : ch);
+      b.addEventListener('click', () => FreqPicker.press(ch));
+      grid.appendChild(b);
+    });
+  }
+  el('freqConfirm').addEventListener('click', () => FreqPicker.confirm());
+  el('freqCancel').addEventListener('click', () => FreqPicker.cancel());
+  el('freqInput').addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') { e.preventDefault(); FreqPicker.confirm(); }
+    else if (e.key === 'Escape') { e.preventDefault(); FreqPicker.cancel(); }
+  });
+  document.querySelectorAll('.touch-btn[data-dir]').forEach(btn => {
+    btn.addEventListener('click', () => { const [dx, dy] = btn.dataset.dir.split(',').map(Number); Game.move(dx, dy); });
+  });
+  el('touchInteract').addEventListener('click', () => Game.interact());
+  el('touchScan').addEventListener('click', () => Game.scan());
+  {
+    let shootPressTimer = null;
+    const shootBtn = el('touchShoot');
+    shootBtn.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      shootPressTimer = setTimeout(() => Game.startBurst(), 350);
+    }, { passive: false });
+    shootBtn.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      if (shootPressTimer) { clearTimeout(shootPressTimer); shootPressTimer = null; Game.shoot(); }
+      Game.stopBurst();
+    }, { passive: false });
+    shootBtn.addEventListener('click', () => Game.shoot()); // clic souris (desktop) ; sur mobile, touchend fait preventDefault donc pas de double tir
+  }
+  el('touchGuide').addEventListener('click', () => Game.guide());
+  el('touchInventory').addEventListener('click', () => Game.announceInventory());
+  el('touchMenu').addEventListener('click', () => openMainMenu());
+  el('touchProxMic').addEventListener('click', () => toggleProxVoice());
+  {
+    const talkieVoiceBtn = el('touchTalkieVoice');
+    talkieVoiceBtn.addEventListener('touchstart', (e) => { e.preventDefault(); talkieVoiceStart(); }, { passive: false });
+    talkieVoiceBtn.addEventListener('touchend', (e) => { e.preventDefault(); talkieVoiceStop(); }, { passive: false });
+    talkieVoiceBtn.addEventListener('touchcancel', (e) => { e.preventDefault(); talkieVoiceStop(); }, { passive: false });
+    // Souris (test desktop) : maintenir le clic = parler, comme un vrai bouton PTT.
+    talkieVoiceBtn.addEventListener('mousedown', () => talkieVoiceStart());
+    talkieVoiceBtn.addEventListener('mouseup', () => talkieVoiceStop());
+    talkieVoiceBtn.addEventListener('mouseleave', () => talkieVoiceStop());
+  }
+  el('touchBrake').addEventListener('click', () => Game.inVehicle ? Game.brakeVehicle() : Game.move(0, 1));
+  el('touchCompass').addEventListener('click', () => Game.announceLocation());
+
+  // Touch gestures (1-5 doigts + balayage horizontal + navigation quantité/menu)
+  let touchStart = 0, touchCount = 0, touchTimer = null, lastTapTime = 0;
+  let swipeStartX = 0, swipeStartY = 0;
+  document.body.addEventListener('touchstart', (e) => {
+    touchCount = e.touches.length; touchStart = Date.now();
+    if (e.touches[0]) { swipeStartX = e.touches[0].clientX; swipeStartY = e.touches[0].clientY; }
+    if (QtyPicker.active || el('menuOverlay').style.display === 'flex') return; // pas de menu RP contextuel pendant ces écrans
+    touchTimer = setTimeout(() => {
+      if (touchCount === 1) toggleProxVoice();
+      else if (touchCount === 2) Game.scan();
+      else if (touchCount === 3) Game.interact();
+      else if (touchCount === 4) Game.announceInventory();
+      else if (touchCount >= 5) Phone.open ? Phone.closePhone() : Phone.openPhone();
+    }, 600);
+  }, { passive: true });
+  document.body.addEventListener('touchend', (e) => {
+    clearTimeout(touchTimer);
+    const duration = Date.now() - touchStart;
+    const endTouch = e.changedTouches && e.changedTouches[0];
+    const dx = endTouch ? endTouch.clientX - swipeStartX : 0;
+    const dy = endTouch ? endTouch.clientY - swipeStartY : 0;
+    const isSwipe = Math.abs(dx) > 40 || Math.abs(dy) > 40;
+    const isTap = duration < 250 && !isSwipe;
+
+    // --- Priorité 1 : sélecteur de quantité ouvert (dons, dépôts, munitions...) ---
+    if (QtyPicker.active) {
+      if (touchCount === 2 && isSwipe && Math.abs(dy) > Math.abs(dx) && dy > 0) { QtyPicker.cancel(); return; } // 2 doigts glisser bas = annuler
+      if (touchCount === 1 && isSwipe) {
+        if (Math.abs(dy) > Math.abs(dx)) QtyPicker.change(dy < 0 ? 1 : -1); // glisser haut = +1, bas = -1
+        else QtyPicker.change(dx > 0 ? 5 : -5); // glisser droite = +5, gauche = -5
+        return;
+      }
+      if (touchCount === 1 && isTap) {
+        const now = Date.now();
+        if (now - lastTapTime < 350) { QtyPicker.confirm(); lastTapTime = 0; }
+        else { lastTapTime = now; speak(String(QtyPicker.value), 'polite'); }
+        return;
+      }
+      return;
+    }
+
+    // --- Priorité 2 : un menu à cartes est ouvert : le même geste sert à s'y déplacer ---
+    const menuOpen = el('menuOverlay').style.display === 'flex';
+    if (menuOpen) {
+      const cards = Array.from(document.querySelectorAll('#menuContent .menu-card'));
+      if (cards.length) {
+        if (touchCount === 1 && isSwipe && Math.abs(dx) > Math.abs(dy)) {
+          let idx = cards.indexOf(document.activeElement);
+          idx = idx === -1 ? 0 : (dx > 0 ? Math.min(cards.length - 1, idx + 1) : Math.max(0, idx - 1));
+          cards[idx].focus();
+          speak(cards[idx].querySelector('h4')?.textContent || '', 'polite');
+          return;
+        }
+        if (touchCount === 1 && isTap) {
+          const now = Date.now();
+          if (now - lastTapTime < 350 && cards.includes(document.activeElement)) { document.activeElement.click(); lastTapTime = 0; }
+          else {
+            lastTapTime = now;
+            if (!cards.includes(document.activeElement)) { cards[0].focus(); speak(cards[0].querySelector('h4')?.textContent || '', 'polite'); }
+          }
+          return;
+        }
+        if (touchCount === 2 && isSwipe && Math.abs(dy) > Math.abs(dx) && dy > 0) { closeMenu(); return; } // 2 doigts glisser bas = fermer le menu
+      }
+    }
+
+    // --- Comportement normal (déplacement, scan, interaction...) ---
+    if (touchCount === 2 && duration < 500 && isSwipe && Math.abs(dx) > Math.abs(dy) * 1.5) { Game.soundRadar(); return; }
+    if (duration < 200 && !isSwipe) {
+      if (touchCount === 1) Game.move(0, -1);
+      else if (touchCount === 2) Game.scan();
+      else if (touchCount === 3) Game.interact();
+      else if (touchCount === 4) Game.announceInventory();
+      else if (touchCount >= 5) openMainMenu();
+    }
+  }, { passive: true });
+
+  // Prevent zoom
+  document.addEventListener('gesturestart', (e) => e.preventDefault());
+  document.addEventListener('dblclick', (e) => e.preventDefault());
+}
+
+/* ============================================================
+   GAME LOOP — NPCs, ambience, missions, survival
+============================================================ */
+function gameLoop() {
+  try {
+    // Déplacement/rotation continus tant qu'une touche reste enfoncée. Le premier
+    // appui a déjà fait un pas (voir setupInput, qui ignore les répétitions
+    // automatiques du système) ; ici on prend le relais à un rythme régulier et
+    // maîtrisé, pour avancer/tourner en continu sans dépendre de la vitesse de
+    // répétition (très variable) du clavier de l'utilisateur.
+    const menuIsOpen = el('menuOverlay').style.display === 'flex';
+    if (!Game.inVehicle && !menuIsOpen && !(typeof QtyPicker !== 'undefined' && QtyPicker.active)) {
+      const now = Date.now();
+      if (now - (Game._lastContinuousMove || 0) > 220) {
+        if (Game.keys.has('arrowup')) { Game.moveForward(); Game._lastContinuousMove = now; }
+        else if (Game.keys.has('arrowdown')) { Game.moveBackward(); Game._lastContinuousMove = now; }
+        else if (Game.keys.has('arrowleft')) { Game.turn(-2); Game._lastContinuousMove = now; }
+        else if (Game.keys.has('arrowright')) { Game.turn(2); Game._lastContinuousMove = now; }
+      }
+    } else if (Game.inVehicle && Game.vehicle && !Game.vehicle.auto && !menuIsOpen) {
+      // Conduite : accélération/freinage à chaque image pour une sensation fluide
+      // et continue (contrairement au pas-à-pas piéton, volontairement cadencé).
+      const fwd = Game.keys.has('arrowup');
+      const back = Game.keys.has('arrowdown');
+      const { dx, dy } = Game.headingToDelta(Game.vehicle.heading);
+      if (fwd) Game.driveVehicle(dx, dy);
+      else if (back) Game.driveVehicle(-dx, -dy);
+      else Game.driveVehicle(0, 0); // relâché : freinage naturel jusqu'à l'arrêt
+      const now2 = Date.now();
+      if (now2 - (Game._lastContinuousMove || 0) > 220) {
+        if (Game.keys.has('arrowleft')) { Game.turn(-2); Game._lastContinuousMove = now2; }
+        else if (Game.keys.has('arrowright')) { Game.turn(2); Game._lastContinuousMove = now2; }
+      }
+    }
+    // Auto-drive step
+    if (Game.inVehicle && Game.vehicle?.auto) Game.autoDriveStep();
+
+    // Engine sound if vehicle moving
+    if (Game.inVehicle && Game.vehicle && Math.abs(Game.vehicle.speed) > 0) {
+      Audio.playEngine(VEHICLE_CATALOG[Game.vehicle.type], Math.abs(Game.vehicle.speed) / VEHICLE_CATALOG[Game.vehicle.type].maxSpeed);
+    }
+
+    // Véhicule immobile en pleine route = circulation bloquée : au bout de
+    // quelques secondes, des automobilistes impatients se manifestent.
+    if (Game.inVehicle && Game.vehicle && Game.vehicle.speed === 0 && City.isRoad(Game.vehicle.x, Game.vehicle.y)) {
+      if (!Game._roadBlockSince) Game._roadBlockSince = Date.now();
+      else if (Date.now() - Game._roadBlockSince > 6000 && Date.now() - (Game._lastImpatientReaction || 0) > 20000) {
+        Game.npcVoiceReaction(Game.vehicle.x, Game.vehicle.y, { group: 'impatient', radius: 12, count: 2 });
+        Game._lastImpatientReaction = Date.now();
+        Game._roadBlockSince = Date.now(); // évite de redéclencher en boucle tant qu'on ne bouge pas
+      }
+    } else {
+      Game._roadBlockSince = null;
+    }
+
+    // Road ambience (son synthétique qui simule le son de la ville)
+    Audio.updateRoadAmbience(Game.x, Game.y, City);
+
+    // Police awareness decay
+    if (Game.wanted > 0 && Math.random() < 0.01) Game.wanted = Math.max(0, Game.wanted - 1);
+
+    // Police dispatch tick
+    Police.tick();
+
+    // Black market dynamic prices
+    if (Math.random() < 0.02) BlackMarket.update();
+
+    // Mission proximity check
+    if (Game.activeMission) Game.checkMission();
+  } catch (e) {
+    // Une erreur ponctuelle ici ne doit jamais arrêter toute la boucle de jeu
+    // (sons d'ambiance, moteur, police, missions) pour le reste de la session.
+    console.error('gameLoop error:', e);
+  }
+  requestAnimationFrame(gameLoop);
+}
+
+function moveNPCs() {
+  for (const n of City.npcs) {
+    if (n.dead) continue;
+    if (Math.random() < 0.3) continue;
+    const dx = UTIL.randInt(-1, 1), dy = UTIL.randInt(-1, 1);
+    const nx = n.x + dx, ny = n.y + dy;
+    if (nx >= 0 && ny >= 0 && nx < City.W && ny < City.H && !City.isSolid(nx, ny)) { n.x = nx; n.y = ny; }
+    if (n.follow && n.menotte) { n.x = Game.x; n.y = Game.y; }
+  }
+}
+
+function startGame(seed) {
+  try { Audio.ensure(); } catch (e) { console.error('Audio.ensure() a échoué :', e); }
+  AudioLib.playOnce('son_intro_jeu', { volume: 0.6 });
+  el('startOverlay').style.display = 'none';
+  try {
+    UTIL.seedCity(seed || Date.now());
+    City.generate();
+    UTIL.unseed();
+    // Réapplique les agrandissements/quartiers/services déjà validés par le
+    // staff sur ce serveur, pour que tout le monde voie la même ville.
+    (Net.pendingCityEdits || []).forEach(e => applyCityEdit(e.op, e.payload));
+    (Net.pendingWorldEdits || []).forEach(e => applyWorldEdit(e.op, e.payload));
+  } catch (e) {
+    console.error('Erreur pendant la génération de la ville :', e);
+  }
+  // Si un compte serveur vient de fournir une sauvegarde, elle est prioritaire
+  // sur la sauvegarde locale (elle vient s'appliquer après la génération de la
+  // ville, comme Game.load(), puisque la resynchronisation en a besoin).
+  if (Game._pendingAccountSaveData) {
+    try { Game.applySaveData(Game._pendingAccountSaveData); } catch (e) { console.error('applySaveData (compte) a échoué :', e); }
+    Game._pendingAccountSaveData = null;
+  } else {
+    try { Game.load(); } catch (e) { console.error('Game.load() a échoué :', e); }
+  }
+  // Ensure player is on free tile
+  try {
+    let guard = 0;
+    while (City.isSolid(Game.x, Game.y) && guard < 500) { Game.x = UTIL.randInt(110, 130); Game.y = UTIL.randInt(110, 130); guard++; }
+    // Filet supplémentaire : si le joueur charge une partie où les 4 cases
+    // adjacentes sont TOUTES solides (encerclé, impossible de bouger), on le
+    // repositionne aussi — sinon il serait coincé sans issue.
+    const surrounded = () => [[1,0],[-1,0],[0,1],[0,-1]].every(([dx,dy]) => City.isSolid(Game.x + dx, Game.y + dy));
+    guard = 0;
+    while (surrounded() && guard < 500) { Game.x = UTIL.randInt(110, 130); Game.y = UTIL.randInt(110, 130); guard++; }
+  } catch (e) { console.error('Placement initial du joueur en échec :', e); Game.x = 120; Game.y = 120; }
+  // Numéro de téléphone principal : généré une seule fois, à la toute
+  // première partie (ou pour une ancienne sauvegarde qui n'en a pas encore).
+  if (!Array.isArray(Game.phones) || !Game.phones.length) {
+    Game.phones = [{ number: UTIL.generatePhoneNumber(), label: `${Game.player.firstName} ${Game.player.lastName}` }];
+    Game.activePhoneIndex = 0;
+  }
+  Net.registerNumbers();
+  // setupInput() DOIT toujours s'exécuter, même si tout ce qui précède a échoué :
+  // sans ça, plus aucun raccourci clavier (flèches comprises) n'est branché.
+  try { setupInput(); } catch (e) { console.error('setupInput() a échoué :', e); }
+  try { updateHud(); } catch (e) { console.error('updateHud() a échoué :', e); }
+  try { announceTouchLabels(); } catch (e) { console.error('announceTouchLabels() a échoué :', e); }
+  const p = Game.player;
+  try {
+    announce(`Bienvenue dans Blind City version 17, ${p.firstName} ${p.lastName}. Pour vous repérer : appuyez sur Maj plus C pour une visite guidée de la ville, F pour balayer les lieux autour de vous, C pour la boussole, et Maj plus B pour activer les balises sonores. Les champs de texte sont maintenant lus par le jeu lui-même, caractère par caractère. Seule la fenêtre système d'autorisation du microphone reste hors du contrôle du jeu : autorisez-la une fois pour toutes dans les réglages du navigateur si besoin. Rendez-vous au commissariat pour votre enregistrement avant de choisir un métier.`, 'assertive');
+    setTimeout(() => Game.help(), 1500);
+  } catch (e) { console.error('Annonce de bienvenue en échec :', e); }
+  // Intervals : protégés eux aussi, pour que gameLoop() démarre toujours ci-dessous
+  try {
+    setInterval(moveNPCs, 1200);
+    setInterval(() => Game.survivalTick(), 2000);
+    setInterval(() => {
+      if (Game.health < 100 && Game.hunger < 50 && Game.thirst < 50) Game.heal(0.5);
+    }, 3000);
+    setInterval(() => Game.save(), 60000);
+    // Sauvegarde silencieuse à la fermeture de l'onglet, sans attendre la
+    // prochaine sauvegarde automatique (jusqu'à 60 secondes de perdues sinon).
+    window.addEventListener('beforeunload', () => { try { Game.save(); } catch (e) {} });
+    setInterval(() => Game.talkieTick(), 5000);
+    setInterval(() => Net.sendState(), 300);
+    setInterval(() => Weather.tick(), 90000);
+    setInterval(() => AmbientZones.check(), 3000);
+    setInterval(() => Game.updateBeacons(), 150);
+    setInterval(() => Game.updateVehicleDelivery(), 1000);
+    setInterval(() => Game.updateGangCombat(), 1500);
+    setInterval(() => Game.updateWantedResponseCombat(), 1500);
+    setInterval(() => Game.tickUnconscious(), 5000);
+    setInterval(() => Game.tickDrivingExam(), 1000);
+    setInterval(() => Game.tickFlightExam(), 1000);
+  } catch (e) { console.error('Mise en place des intervalles en échec :', e); }
+  gameLoop();
+}
+
+/* ============================================================
+   PHONE SYSTEM — contacts, messages, calls, garage app, voice chat
+============================================================ */
+/* ============================================================
+   VOICE CHAT — communication vocale RÉELLE entre deux joueurs en appel
+   (le micro de chacun, pas une voix synthétique), via WebRTC.
+   Le serveur relais (server.js) ne fait que transmettre l'offre, la
+   réponse et les candidats ICE (rtc_offer / rtc_answer / rtc_ice) :
+   une fois la connexion établie, l'audio passe directement d'un
+   appareil à l'autre (pair-à-pair), ce qui minimise la latence, y
+   compris avec une connexion modeste. Sur certains réseaux très
+   restrictifs (double NAT, pare-feu d'entreprise), un serveur TURN
+   peut être nécessaire en complément des serveurs STUN publics
+   utilisés ici — à ajouter dans ICE_SERVERS si besoin.
+============================================================ */
+const ICE_SERVERS = [
+  { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+];
+// Demande l'accès au micro en prévenant d'abord l'utilisateur, une seule fois
+// par session : la fenêtre d'autorisation du navigateur est une fenêtre système
+// que le jeu ne peut pas rendre accessible lui-même, et certains lecteurs
+// d'écran (NVDA en particulier) ne la lisent pas toujours automatiquement.
+let micWarningGiven = false;
+async function requestMicrophoneAccess() {
+  if (!micWarningGiven) {
+    micWarningGiven = true;
+    announce('Le navigateur va demander l\'autorisation d\'utiliser le microphone. C\'est une fenêtre du système, pas du jeu : si vous n\'avez aucun lecteur d\'écran actif pour l\'entendre, demandez à quelqu\'un de cliquer une seule fois sur Autoriser, ou autorisez le micro pour ce site à l\'avance dans les réglages du navigateur. Une fois accepté, le navigateur retient ce choix et ne redemandera plus. Si vous parlez mais que les autres joueurs ne vous entendent pas, c\'est probablement que cette autorisation n\'a jamais été donnée : activez temporairement votre lecteur d\'écran pour l\'accorder si ce n\'est pas déjà fait.', 'assertive');
+    await new Promise(r => setTimeout(r, 3500)); // laisser le temps d'entendre l'avertissement avant que la fenêtre système n'apparaisse
+  }
+  return navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false,
+  });
+}
+window.requestMicrophoneAccess = requestMicrophoneAccess;
+
+// Narration de saisie autonome : le jeu joue ici le rôle du lecteur d'écran
+// pour ses propres champs de texte, sans dépendre de NVDA/VoiceOver/TalkBack
+// (qui peuvent très bien être totalement désactivés — c'est même l'usage
+// normal prévu). À l'arrivée sur le champ, on annonce son rôle et son contenu
+// actuel. Ensuite, chaque caractère tapé est lu immédiatement, chaque mot
+// terminé (espace) est relu en entier, et chaque suppression est annoncée.
