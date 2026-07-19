@@ -916,7 +916,7 @@ function startGame(seed) {
   try { announceTouchLabels(); } catch (e) { console.error('announceTouchLabels() a échoué :', e); }
   const p = Game.player;
   try {
-    announce(`Bienvenue dans Blind City version 17, ${p.firstName} ${p.lastName}. Pour vous repérer : appuyez sur Maj plus C pour une visite guidée de la ville, F pour balayer les lieux autour de vous, C pour la boussole, et Maj plus B pour activer les balises sonores. Les champs de texte sont maintenant lus par le jeu lui-même, caractère par caractère. Seule la fenêtre système d'autorisation du microphone reste hors du contrôle du jeu : autorisez-la une fois pour toutes dans les réglages du navigateur si besoin. Rendez-vous au commissariat pour votre enregistrement avant de choisir un métier.`, 'assertive');
+    announce(`Bienvenue dans Blind City version 18, ${p.firstName} ${p.lastName}. Pour vous repérer : appuyez sur Maj plus C pour une visite guidée de la ville, F pour balayer les lieux autour de vous, C pour la boussole, et Maj plus B pour activer les balises sonores. Les champs de texte sont maintenant lus par le jeu lui-même, caractère par caractère. Seule la fenêtre système d'autorisation du microphone reste hors du contrôle du jeu : autorisez-la une fois pour toutes dans les réglages du navigateur si besoin. Rendez-vous au commissariat pour votre enregistrement avant de choisir un métier.`, 'assertive');
     setTimeout(() => Game.help(), 1500);
   } catch (e) { console.error('Annonce de bienvenue en échec :', e); }
   // Intervals : protégés eux aussi, pour que gameLoop() démarre toujours ci-dessous
