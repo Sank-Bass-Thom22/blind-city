@@ -63,6 +63,10 @@ if (SUPABASE_KEY) {
     console.error('[persistance] @supabase/supabase-js indisponible — retour aux fichiers locaux. Détail :', e.message);
   }
 }
+// État de la persistance, exposé sur la page /status (lisible au lecteur
+// d'écran) pour diagnostiquer sans avoir à parcourir les logs à l'œil.
+let persistenceReady = false; // true si le chargement initial Supabase a réussi
+let persistenceError = null;  // message d'erreur Supabase, le cas échéant
 // Lit une entrée de la table game_state. Renvoie null si la clé n'existe pas
 // encore (normal au tout premier démarrage). Lève une erreur en cas de vrai
 // problème (réseau, droits) : on préfère alors s'arrêter plutôt que risquer
@@ -97,7 +101,9 @@ try {
   if (loaded && loaded.codes) { staffData = loaded; if (!Array.isArray(staffData.cityEdits)) staffData.cityEdits = []; if (!Array.isArray(staffData.bans)) staffData.bans = []; if (!Array.isArray(staffData.worldEdits)) staffData.worldEdits = []; }
 } catch (e) { /* fichier absent au premier démarrage : on garde les valeurs par défaut ci-dessus */ }
 function saveStaffData() {
-  if (supabase) { supabaseSave('staff', staffData); return; }
+  // En mode Supabase, on n'écrit que si le chargement initial a réussi
+  // (persistenceReady), pour ne jamais écraser la base avec un état incomplet.
+  if (supabase) { if (persistenceReady) supabaseSave('staff', staffData); return; }
   try { fs.writeFileSync(STAFF_FILE, JSON.stringify(staffData, null, 2), 'utf8'); } catch (e) { console.error('Impossible d\'enregistrer staff-data.json :', e); }
 }
 
@@ -115,7 +121,7 @@ try {
   if (loaded && loaded.accounts) accountsData = loaded;
 } catch (e) { /* fichier absent au premier démarrage */ }
 function saveAccountsData() {
-  if (supabase) { supabaseSave('accounts', accountsData); return; }
+  if (supabase) { if (persistenceReady) supabaseSave('accounts', accountsData); return; }
   try { fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify(accountsData, null, 2), 'utf8'); } catch (e) { console.error('Impossible d\'enregistrer accounts-data.json :', e); }
 }
 function hashPassword(password, salt) {
@@ -158,6 +164,24 @@ const server = http.createServer((req, res) => {
   // (protection basique contre la traversée de répertoire — pas de "..").
   if ((reqPath.startsWith('/js/') || reqPath.startsWith('/sounds/')) && !reqPath.includes('..')) {
     serveStaticFile(res, path.join(__dirname, reqPath));
+    return;
+  }
+  // Page d'état accessible : indique en clair si Supabase est bien connecté,
+  // et sinon le message d'erreur exact. Lisible au lecteur d'écran (et par un
+  // outil), pour diagnostiquer sans fouiller les logs.
+  if (reqPath === '/status') {
+    const status = {
+      serveur: 'en ligne',
+      persistance: !supabase
+        ? 'fichiers locaux (Supabase non configuré)'
+        : (persistenceReady ? 'Supabase OK — les comptes sont sauvegardés' : 'Supabase EN ERREUR — sauvegardes en pause'),
+      supabase_configure: !!supabase,
+      supabase_operationnel: persistenceReady,
+      supabase_erreur: persistenceError,
+      joueurs_connectes: players.size,
+    };
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(status, null, 2));
     return;
   }
   res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -889,8 +913,9 @@ setInterval(() => {
 
 // Au démarrage : si Supabase est activé, on charge d'abord les comptes et les
 // données staff depuis la base AVANT d'accepter des connexions. En cas d'erreur
-// de chargement, on s'arrête volontairement (l'hébergeur relancera le serveur)
-// plutôt que de démarrer sur un état vide qui écraserait la base.
+// de chargement, on NE s'arrête PAS (le jeu reste en ligne) : on met simplement
+// les sauvegardes en pause pour ne rien écraser, et on expose l'erreur sur la
+// page /status afin de pouvoir la diagnostiquer de façon accessible.
 async function init() {
   if (supabase) {
     try {
@@ -907,10 +932,11 @@ async function init() {
       const acc = await supabaseLoad('accounts');
       if (acc && acc.accounts) accountsData = acc;
       else await supabaseSave('accounts', accountsData);
+      persistenceReady = true;
       console.log('[persistance] Comptes et données staff chargés depuis Supabase.');
     } catch (e) {
-      console.error('[persistance] ERREUR au chargement Supabase — arrêt volontaire pour éviter toute perte de données (l\'hébergeur redémarrera le serveur). Détail :', e.message);
-      process.exit(1);
+      persistenceError = e.message;
+      console.error('[persistance] ERREUR Supabase — le serveur démarre SANS sauvegarde (aucune donnée ne sera écrasée). Voir la page /status. Détail :', e.message);
     }
   }
   server.listen(PORT, () => {
