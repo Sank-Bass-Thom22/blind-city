@@ -916,27 +916,45 @@ setInterval(() => {
 // de chargement, on NE s'arrête PAS (le jeu reste en ligne) : on met simplement
 // les sauvegardes en pause pour ne rien écraser, et on expose l'erreur sur la
 // page /status afin de pouvoir la diagnostiquer de façon accessible.
+// Tente de charger les comptes + données staff depuis Supabase. Renvoie true
+// si tout s'est bien passé (persistance active), false sinon (mode dégradé :
+// le jeu tourne mais sans sauvegarde, pour ne rien écraser).
+async function loadFromSupabase() {
+  try {
+    const st = await supabaseLoad('staff');
+    if (st && st.codes) {
+      staffData = st;
+      if (!Array.isArray(staffData.bans)) staffData.bans = [];
+      if (!Array.isArray(staffData.cityEdits)) staffData.cityEdits = [];
+      if (!Array.isArray(staffData.worldEdits)) staffData.worldEdits = [];
+    } else {
+      // Tout premier démarrage : on transfère les codes/données du fichier vers Supabase.
+      await supabaseSave('staff', staffData);
+    }
+    const acc = await supabaseLoad('accounts');
+    if (acc && acc.accounts) accountsData = acc;
+    else await supabaseSave('accounts', accountsData);
+    persistenceReady = true;
+    persistenceError = null;
+    console.log('[persistance] Comptes et données staff chargés depuis Supabase.');
+    return true;
+  } catch (e) {
+    persistenceError = e.message;
+    console.error('[persistance] ERREUR Supabase — sauvegardes en pause (aucune donnée écrasée). Voir /status. Détail :', e.message);
+    return false;
+  }
+}
+
 async function init() {
   if (supabase) {
-    try {
-      const st = await supabaseLoad('staff');
-      if (st && st.codes) {
-        staffData = st;
-        if (!Array.isArray(staffData.bans)) staffData.bans = [];
-        if (!Array.isArray(staffData.cityEdits)) staffData.cityEdits = [];
-        if (!Array.isArray(staffData.worldEdits)) staffData.worldEdits = [];
-      } else {
-        // Tout premier démarrage : on transfère les codes/données du fichier vers Supabase.
-        await supabaseSave('staff', staffData);
-      }
-      const acc = await supabaseLoad('accounts');
-      if (acc && acc.accounts) accountsData = acc;
-      else await supabaseSave('accounts', accountsData);
-      persistenceReady = true;
-      console.log('[persistance] Comptes et données staff chargés depuis Supabase.');
-    } catch (e) {
-      persistenceError = e.message;
-      console.error('[persistance] ERREUR Supabase — le serveur démarre SANS sauvegarde (aucune donnée ne sera écrasée). Voir la page /status. Détail :', e.message);
+    const ok = await loadFromSupabase();
+    if (!ok) {
+      // Réessaie automatiquement toutes les 30 s jusqu'à réussir (par exemple
+      // après avoir corrigé les permissions Supabase) : plus besoin de
+      // redéployer manuellement pour que la persistance reparte.
+      const retry = setInterval(async () => {
+        if (await loadFromSupabase()) clearInterval(retry);
+      }, 30000);
     }
   }
   server.listen(PORT, () => {
