@@ -1268,6 +1268,9 @@ const Game = {
     }
     else if (poi.type === 'auto_ecole') { this.openDrivingSchool(); }
     else if (poi.type === 'ecole_pilotage') { this.openFlightSchool(); }
+    else if (poi.type === 'tribunal') { announce('Cour Pénale. C\'est ici que sont jugées les affaires criminelles de la ville : avocats, accusés et policiers s\'y retrouvent pour les procès en RP.', 'polite'); }
+    else if (poi.type === 'monument') { announce('Monument de la Musique. Une haute tour dédiée aux artistes et à la culture de la cité. Du sommet, on entend toute la ville respirer.', 'polite'); }
+    else if (poi.type === 'palais') { announce('Palais du Naaba. Le siège du gouvernement traditionnel et la résidence du Naaba : un lieu de prestige et d\'autorité au cœur de la cité.', 'polite'); }
     else { announce(`Vous entrez dans ${poi.name}. ${poi.floors > 1 ? 'Bâtiment de ' + poi.floors + ' étages.' : ''}`, 'polite'); }
   },
   enterHouse(house) {

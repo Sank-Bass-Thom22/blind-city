@@ -15,6 +15,11 @@ const VEHICLE_CATALOG = {
   moto_police: { name: 'Moto de police', label: 'moto de police', type: 'moto', baseFreq: 85, mult: 62, wave: 'square', maxSpeed: 1.55, accel: 0.12, brake: 0.13, turn: 1.15, offroad: 0.55, flies: false, wheels: 2, price: 1800000, trunk: 10, seats: 1, doors: 0, gouvernemental: true },
   ambulance: { name: 'Ambulance', label: 'ambulance', type: 'voiture', baseFreq: 48, mult: 40, wave: 'sawtooth', maxSpeed: 1.25, accel: 0.09, brake: 0.12, turn: 0.9, offroad: 0.4, flies: false, wheels: 4, price: 10000000, trunk: 40, seats: 3, doors: 4, gouvernemental: true },
   camion: { name: 'Camion', label: 'camion', type: 'poids lourd', baseFreq: 38, mult: 24, wave: 'sawtooth', maxSpeed: 0.85, accel: 0.04, brake: 0.08, turn: 0.65, offroad: 0.4, flies: false, wheels: 6, price: 18000000, trunk: 120, seats: 2, doors: 2 },
+  // Véhicules blindés civils : vendus normalement au concessionnaire (non
+  // restreints). L'armure réduit fortement les dégâts de collision — plus lents
+  // et plus chers en échange. Utiles pour transporter de l'argent ou se protéger.
+  blinde_leger: { name: '4x4 blindé', label: '4x4 blindé', type: 'voiture', baseFreq: 44, mult: 34, wave: 'sawtooth', maxSpeed: 1.0, accel: 0.06, brake: 0.12, turn: 0.8, offroad: 0.85, flies: false, wheels: 4, price: 38000000, trunk: 34, seats: 5, doors: 4, armor: 0.45 },
+  blinde_lourd: { name: 'Fourgon blindé', label: 'fourgon blindé', type: 'poids lourd', baseFreq: 36, mult: 22, wave: 'sawtooth', maxSpeed: 0.8, accel: 0.04, brake: 0.13, turn: 0.6, offroad: 0.55, flies: false, wheels: 4, price: 65000000, trunk: 60, seats: 4, doors: 4, armor: 0.65 },
   // Char d'assaut : jamais vendu au concessionnaire normal. Deux voies
   // d'acquisition seulement : réquisition policière (menu police, très cher)
   // ou marché noir (offre rare, encore plus cher). Très résistant (armure),
