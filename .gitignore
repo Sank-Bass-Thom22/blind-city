@@ -1,0 +1,9 @@
+# Données du serveur contenant des secrets — ne jamais publier
+staff-data.json
+accounts-data.json
+
+# Dépendances Node
+node_modules/
+
+# Fichiers système
+.DS_Store

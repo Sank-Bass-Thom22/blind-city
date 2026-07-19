@@ -2,7 +2,7 @@
  * Blind City Online — serveur relais WebSocket + hébergement du jeu
  * -----------------------------------------------
  * Ce petit serveur fait deux choses :
- *  1. Il sert le jeu lui-même (blind-city-v17.html, le dossier js/, le
+ *  1. Il sert le jeu lui-même (blind-city-v18.html, le dossier js/, le
  *     dossier sounds/) à quiconque visite son adresse dans un navigateur —
  *     pas besoin de télécharger de fichiers séparément au préalable.
  *  2. Il relaie le multijoueur (WebSocket) entre tous les joueurs connectés :
@@ -21,7 +21,7 @@
  *   (le jeu est accessible sur http://localhost:3000, wss://localhost:3000
  *   pour la connexion multijoueur — ce sont la même adresse)
  *
- * Important : server.js, blind-city-v17.html, le dossier js/ et le dossier
+ * Important : server.js, blind-city-v18.html, le dossier js/ et le dossier
  * sounds/ doivent rester ensemble, au même endroit, pour que l'hébergement
  * fonctionne.
  *
@@ -43,7 +43,18 @@ const crypto = require('crypto');
 const WebSocket = require('ws');
 
 const STAFF_FILE = path.join(__dirname, 'staff-data.json');
-let staffData = { codes: { principal: 'FILWENDEMUS20002000@!!?', moderateur: 'FILWENDEmus0020!!?16' }, bans: [], cityEdits: [], worldEdits: [] };
+// Codes administrateur : lus depuis les variables d'environnement (jamais en
+// clair dans le code, pour ne pas les exposer sur un dépôt public). Définissez
+// STAFF_CODE_PRINCIPAL et STAFF_CODE_MODERATEUR sur votre hébergeur (Render,
+// Railway...) ou dans staff-data.json. Les valeurs par défaut ci-dessous ne
+// sont que des exemples à changer — elles ne donnent aucun accès réel.
+let staffData = {
+  codes: {
+    principal: process.env.STAFF_CODE_PRINCIPAL || 'changez-ce-code-principal',
+    moderateur: process.env.STAFF_CODE_MODERATEUR || 'changez-ce-code-moderateur',
+  },
+  bans: [], cityEdits: [], worldEdits: [],
+};
 try {
   const raw = fs.readFileSync(STAFF_FILE, 'utf8');
   const loaded = JSON.parse(raw);
@@ -82,7 +93,7 @@ const WORLD_TICK_MS = 250;   // fréquence de diffusion des positions (~4 fois p
 // Sert aussi le jeu lui-même (HTML, JS, sons) : quelqu'un visitant l'adresse
 // du serveur dans son navigateur reçoit directement le jeu, sans avoir à
 // télécharger de fichiers séparément au préalable.
-const GAME_HTML_FILE = 'blind-city-v17.html';
+const GAME_HTML_FILE = 'blind-city-v18.html';
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'application/javascript; charset=utf-8',
