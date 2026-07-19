@@ -1268,10 +1268,117 @@ const Game = {
     }
     else if (poi.type === 'auto_ecole') { this.openDrivingSchool(); }
     else if (poi.type === 'ecole_pilotage') { this.openFlightSchool(); }
-    else if (poi.type === 'tribunal') { announce('Cour Pénale. C\'est ici que sont jugées les affaires criminelles de la ville : avocats, accusés et policiers s\'y retrouvent pour les procès en RP.', 'polite'); }
-    else if (poi.type === 'monument') { announce('Monument de la Musique. Une haute tour dédiée aux artistes et à la culture de la cité. Du sommet, on entend toute la ville respirer.', 'polite'); }
-    else if (poi.type === 'palais') { announce('Palais du Naaba. Le siège du gouvernement traditionnel et la résidence du Naaba : un lieu de prestige et d\'autorité au cœur de la cité.', 'polite'); }
+    else if (poi.type === 'tribunal') { this.openCourtHouse(); }
+    else if (poi.type === 'monument') { this.openMusicMonument(); }
+    else if (poi.type === 'palais') { this.openNaabaPalace(); }
     else { announce(`Vous entrez dans ${poi.name}. ${poi.floors > 1 ? 'Bâtiment de ' + poi.floors + ' étages.' : ''}`, 'polite'); }
+  },
+  // --- Cour Pénale : régulariser sa situation judiciaire ---
+  // Payer une caution ramène le niveau de recherche à zéro ; plaider soi-même
+  // est gratuit mais aléatoire ; on peut aussi juste assister à un procès.
+  openCourtHouse() {
+    el('menuTitle').textContent = '⚖️ Cour Pénale';
+    const wanted = Math.round(this.wanted || 0);
+    const bail = Math.max(50000, wanted * 40000);
+    const items = [];
+    if (wanted > 0) {
+      items.push({ id: 'bail', title: `⚖️ Payer une caution (${UTIL.formatMoney(bail)})`, desc: `Recherche actuelle ${wanted} sur 100 : ramenée à zéro.` });
+      items.push({ id: 'plead', title: '🗣️ Plaider soi-même (gratuit)', desc: 'Risqué : réduit peut-être votre niveau de recherche, ou pas du tout.' });
+    } else {
+      items.push({ id: 'clean', title: '✅ Votre casier est vierge', desc: 'Rien à régulariser pour l\'instant.' });
+    }
+    items.push({ id: 'watch', title: '👂 Assister à un procès en cours', desc: 'Écouter les débats de la Cour.' });
+    items.push({ id: 'exit', title: '↩️ Sortir', desc: '' });
+    el('menuOverlay').style.display = 'flex';
+    renderMenu(items, (sel) => {
+      closeMenu();
+      if (sel.id === 'bail') {
+        if (this.money < bail) return announce(`Caution de ${UTIL.formatMoney(bail)} : fonds insuffisants.`, 'assertive');
+        this.money -= bail; this.wanted = 0; Audio.cash();
+        announce('Caution payée. Votre situation est régularisée : vous n\'êtes plus recherché.', 'assertive'); updateHud();
+      } else if (sel.id === 'plead') {
+        if (UTIL.chance(0.5)) { this.wanted = Math.max(0, Math.round((this.wanted || 0) / 2)); announce('Votre plaidoirie a convaincu la Cour : votre niveau de recherche a baissé.', 'assertive'); }
+        else announce('La Cour n\'a pas été convaincue. Votre situation reste inchangée.', 'assertive');
+        updateHud();
+      } else if (sel.id === 'watch') {
+        announce('Un procès est en cours : l\'avocat plaide, le juge écoute, le public retient son souffle. La justice de la cité suit son cours.', 'polite');
+      }
+    });
+  },
+  // --- Monument de la Musique : panorama sonore + concert ---
+  openMusicMonument() {
+    el('menuTitle').textContent = '🎵 Monument de la Musique';
+    const items = [
+      { id: 'top', title: '🔭 Monter au sommet (panorama sonore)', desc: 'Entendre la direction et la distance des grands lieux de la cité.' },
+      { id: 'concert', title: '🎶 Écouter un concert', desc: 'Profiter de la musique du monument.' },
+      { id: 'exit', title: '↩️ Redescendre', desc: '' },
+    ];
+    el('menuOverlay').style.display = 'flex';
+    renderMenu(items, (sel) => {
+      closeMenu();
+      if (sel.id === 'top') this.announceCityPanorama();
+      else if (sel.id === 'concert') {
+        try { AudioLib.playOnce('son_intro_jeu', { volume: 0.6 }); } catch (e) { /* ignore */ }
+        announce('Un concert résonne depuis le Monument de la Musique : les artistes de la cité se produisent ici.', 'polite');
+      }
+    });
+  },
+  // Décrit, depuis le sommet, les grands lieux repérables : direction cardinale
+  // et distance, pour aider à s'orienter dans toute la ville.
+  announceCityPanorama() {
+    const notable = ['police', 'hopital', 'banque', 'concessionnaire', 'aeroport', 'prison', 'tribunal', 'palais', 'marche_noir'];
+    const chosen = [];
+    for (const type of notable) {
+      const list = City.pois.filter(p => p.type === type);
+      if (!list.length) continue;
+      const p = list.slice().sort((a, b) => UTIL.dist(a, this) - UTIL.dist(b, this))[0];
+      chosen.push({ name: p.name, bearing: UTIL.bearing(p.x - this.x, p.y - this.y), dist: Math.round(UTIL.dist(p, this) * CONFIG.METERS_PER_TILE) });
+    }
+    chosen.sort((a, b) => a.dist - b.dist);
+    const top = chosen.slice(0, 6);
+    if (!top.length) return announce('Du sommet, la ville s\'étend autour de vous, mais aucun grand lieu n\'est identifiable d\'ici.', 'polite');
+    announce(`Du sommet du Monument de la Musique, vous repérez : ${top.map(p => `${p.name}, ${p.bearing}, à ${p.dist} mètres`).join(' ; ')}.`, 'polite');
+  },
+  // --- Palais du Naaba : audience (sagesse) et don à la communauté ---
+  openNaabaPalace() {
+    el('menuTitle').textContent = '👑 Palais du Naaba';
+    const items = [
+      { id: 'audience', title: '🙏 Assister à une audience du Naaba', desc: 'Recevoir une parole de sagesse.' },
+      { id: 'don', title: '🎁 Faire un don à la communauté', desc: 'Offrir de l\'argent pour la cité.' },
+      { id: 'exit', title: '↩️ Sortir', desc: '' },
+    ];
+    el('menuOverlay').style.display = 'flex';
+    renderMenu(items, (sel) => {
+      closeMenu();
+      if (sel.id === 'audience') {
+        const paroles = [
+          'Le Naaba déclare : la patience est un arbre dont la racine est amère, mais dont le fruit est très doux.',
+          'Le Naaba rappelle : un seul bracelet ne fait pas de bruit ; c\'est l\'union qui rend la cité forte.',
+          'Le Naaba enseigne : celui qui pose des questions ne se perd jamais en chemin.',
+          'Le Naaba proclame : la parole donnée est une dette d\'honneur.',
+          'Le Naaba bénit ses habitants : que la paix et la prospérité règnent sur la cité.',
+        ];
+        announce(UTIL.pick(paroles), 'polite');
+      } else if (sel.id === 'don') {
+        this.openNaabaDonation();
+      }
+    });
+  },
+  openNaabaDonation() {
+    el('menuTitle').textContent = '🎁 Don à la communauté';
+    const montants = [50000, 250000, 1000000];
+    const items = montants.map(m => ({ id: String(m), title: UTIL.formatMoney(m), desc: '' }));
+    items.push({ id: 'exit', title: '↩️ Annuler', desc: '' });
+    el('menuOverlay').style.display = 'flex';
+    renderMenu(items, (sel) => {
+      closeMenu();
+      if (sel.id === 'exit') return;
+      const m = parseInt(sel.id, 10);
+      if (this.money < m) return announce('Fonds insuffisants pour ce don.', 'assertive');
+      this.money -= m; Audio.cash();
+      announce(`Le Naaba vous remercie pour votre don de ${UTIL.formatMoney(m)} à la communauté. Votre générosité est reconnue dans toute la cité.`, 'assertive');
+      updateHud();
+    });
   },
   enterHouse(house) {
     const authorized = this.ownedHouses.includes(house.id) || (house.authorizedUsers || []).includes(Net.accountUsername);
