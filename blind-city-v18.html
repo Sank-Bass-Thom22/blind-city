@@ -196,6 +196,26 @@ body {
 .badge-medecin { background:#1a4a3a; color:#5ee397; }
 .badge-meca { background:#4a3a1a; color:#ffcc66; }
 .badge-citoyen { background:#3a3a4a; color:#b8c2d0; }
+
+/* ===== ASSISTANT DE DÉMARRAGE (sous-pages) ===== */
+.wizard-step { text-align:left; }
+.wiz-btn { display:block; width:100%; background:var(--accent); color:#1a1200; border:none; font-size:1.05rem; padding:15px 18px; border-radius:14px; font-weight:bold; margin:10px 0; cursor:pointer; }
+.wiz-btn.secondary { background:var(--panel-2); color:var(--text); border:1px solid var(--border); font-weight:600; }
+.wiz-btn:focus-visible, .wiz-nav button:focus-visible, .phone-btn:focus-visible { outline:3px solid var(--focus); outline-offset:2px; }
+.wiz-step-title { color:var(--accent-2); font-size:1.15rem; margin-bottom:10px; outline:none; }
+.wiz-progress { font-size:0.72rem; color:var(--muted); margin-bottom:8px; text-transform:uppercase; letter-spacing:0.05em; }
+.wiz-field { display:block; font-size:0.9rem; color:var(--muted); margin:14px 0 4px; }
+.wiz-field input, .wiz-field select { width:100%; padding:13px; margin-top:5px; border-radius:10px; border:1px solid var(--border); background:var(--panel); color:var(--text); font-size:1.05rem; }
+.wiz-nav { display:flex; gap:10px; margin-top:20px; }
+.wiz-nav button { flex:1; padding:14px; border-radius:12px; font-size:1.02rem; cursor:pointer; }
+.wiz-nav .next { background:var(--accent); color:#1a1200; border:none; font-weight:bold; }
+.wiz-nav .back { background:var(--panel-2); color:var(--text); border:1px solid var(--border); }
+.wiz-fieldset { border:none; padding:0; margin:14px 0; }
+.wiz-fieldset legend { font-size:0.9rem; color:var(--muted); margin-bottom:6px; }
+.wiz-fieldset label { display:block; font-size:0.98rem; color:var(--text); margin:8px 0; }
+.wiz-rp fieldset { border:none; padding:0; margin-bottom:16px; }
+.wiz-rp legend { font-size:0.9rem; color:var(--text); margin-bottom:6px; }
+.wiz-rp label { display:block; font-size:0.92rem; color:var(--text); margin:6px 0; }
 </style>
 </head>
 <body>
@@ -218,10 +238,31 @@ body {
 <div id="startOverlay">
   <div class="box">
     <h1>🌆 Blind City v18</h1>
-    <div class="studio">— RP Total, police gérée par les joueurs, véhicules détaillés, prison, fouille —</div>
-    <p>Un univers sonore et vivant conçu pour les joueurs non et malvoyants.<br>
-      <strong>Marche, conduis, vole, échange, vis, combats en RP. Nouveau : police humaine, testament au commissariat, menu véhicule, portes réelles, prison, fouille, sirène.</strong></p>
-    <ul>
+    <div class="studio">— Monde sonore accessible : marche, conduis, échange, combats et vis en RP —</div>
+
+    <!-- Champs techniques toujours présents (pilotés par le code) : l'adresse du
+         serveur est remplie automatiquement, et l'action (connexion / création)
+         est choisie via les boutons de la première page. -->
+    <div hidden aria-hidden="true">
+      <input type="hidden" id="charServerUrl" value="">
+      <input type="radio" name="accountAction" value="login" checked>
+      <input type="radio" name="accountAction" value="register">
+    </div>
+
+    <!-- PAGE 1 : ACCUEIL / CHOIX -->
+    <div class="wizard-step" id="wizStepChoice">
+      <p style="margin-bottom:6px;">Bienvenue dans un univers sonore vivant, conçu pour les joueurs non et malvoyants.</p>
+      <p class="wiz-progress">Que souhaitez-vous faire ?</p>
+      <button type="button" class="wiz-btn" id="btnGoRegister">🆕 Créer un nouveau compte</button>
+      <button type="button" class="wiz-btn secondary" id="btnGoLogin">🔑 Me connecter à mon compte</button>
+      <button type="button" class="wiz-btn secondary" id="btnGoSolo">🎮 Jouer seul, sans compte</button>
+      <button type="button" class="wiz-btn secondary" id="btnGoHelp">❓ Aide : commandes et gestes</button>
+    </div>
+
+    <!-- AIDE -->
+    <div class="wizard-step" id="wizStepHelp" hidden>
+      <div class="wiz-step-title" tabindex="-1">❓ Commandes et gestes</div>
+      <ul>
       <li><strong>Flèche haut</strong> : avancer d'un pas dans la direction où vous regardez (maintenir = avancer en continu).</li>
       <li><strong>Flèche bas</strong> : reculer d'un pas (maintenir = reculer en continu).</li>
       <li><strong>Flèche gauche</strong> : tourner sur soi vers la gauche.</li>
@@ -248,94 +289,140 @@ body {
       correspondant, ou appui long à 5 doigts pour le menu principal. Balayage horizontal à 2 doigts :
       changer de fréquence radio. Les sons sont spatiaux : penchez la tête vers un bruit pour vous orienter.
     </p>
-    <div class="char-creator" style="margin:14px 0; text-align:left; background:var(--panel-2); padding:14px; border-radius:14px; border:1px solid var(--border);">
-      <h3 style="color:var(--accent-2); font-size:0.95rem; margin-bottom:8px;">👤 Créer votre personnage</h3>
-      <label style="display:block; font-size:0.8rem; color:var(--muted); margin-bottom:4px;">Prénom
-        <input type="text" id="charFirstName" placeholder="Prénom" autocomplete="off" style="width:100%; padding:9px; margin-top:3px; border-radius:8px; border:1px solid var(--border); background:var(--panel); color:var(--text); font-size:0.95rem;">
-      </label>
-      <label style="display:block; font-size:0.8rem; color:var(--muted); margin:10px 0 4px;">Nom
-        <input type="text" id="charLastName" placeholder="Nom" autocomplete="off" style="width:100%; padding:9px; margin-top:3px; border-radius:8px; border:1px solid var(--border); background:var(--panel); color:var(--text); font-size:0.95rem;">
-      </label>
-      <fieldset style="border:none; margin-top:10px; padding:0;">
-        <legend style="font-size:0.8rem; color:var(--muted); margin-bottom:4px;">Personnage joué</legend>
-        <label style="font-size:0.88rem; margin-right:18px; color:var(--text);"><input type="radio" name="charGender" value="homme" checked> 🧑 Homme</label>
-        <label style="font-size:0.88rem; color:var(--text);"><input type="radio" name="charGender" value="femme"> 👩 Femme</label>
-      </fieldset>
-      <label style="display:block; font-size:0.8rem; color:var(--muted); margin:12px 0 4px;">Serveur multijoueur (facultatif — laisser vide pour jouer seul)
-        <input type="text" id="charServerUrl" placeholder="wss://votre-serveur.exemple.com" autocomplete="off" style="width:100%; padding:9px; margin-top:3px; border-radius:8px; border:1px solid var(--border); background:var(--panel); color:var(--text); font-size:0.9rem;">
-      </label>
-      <p style="font-size:0.72rem; color:var(--muted); margin-top:6px;">Renseignez l'adresse du serveur Blind City Online pour jouer en RP avec d'autres joueurs connectés, où qu'ils soient dans le monde. Sans adresse, vous jouez seul sur cet appareil.</p>
-      <fieldset style="border:1px solid var(--border); border-radius:10px; margin-top:12px; padding:10px;">
-        <legend style="font-size:0.82rem; color:var(--accent-2); padding:0 4px;">🔑 Compte joueur (obligatoire si vous renseignez un serveur ci-dessus)</legend>
-        <label style="font-size:0.85rem; display:block; margin-bottom:4px; color:var(--text);"><input type="radio" name="accountAction" value="login" checked> Se connecter à mon compte</label>
-        <label style="font-size:0.85rem; display:block; margin-bottom:8px; color:var(--text);"><input type="radio" name="accountAction" value="register"> Créer un compte</label>
-        <div id="realNameBlock">
-          <label style="display:block; font-size:0.78rem; color:var(--muted); margin-bottom:4px;">Votre vrai prénom (utile seulement à la création — connu de l'administrateur, jamais affiché aux autres joueurs)
-            <input type="text" id="realFirstName" placeholder="votre vrai prénom" autocomplete="off" style="width:100%; padding:8px; margin-top:3px; border-radius:8px; border:1px solid var(--border); background:var(--panel); color:var(--text); font-size:0.9rem;">
-          </label>
-          <label style="display:block; font-size:0.78rem; color:var(--muted); margin:8px 0 4px;">Votre vrai nom
-            <input type="text" id="realLastName" placeholder="votre vrai nom" autocomplete="off" style="width:100%; padding:8px; margin-top:3px; border-radius:8px; border:1px solid var(--border); background:var(--panel); color:var(--text); font-size:0.9rem;">
-          </label>
-        </div>
-        <label style="display:block; font-size:0.78rem; color:var(--muted); margin-bottom:4px;">Identifiant
-          <input type="text" id="accountUsername" placeholder="identifiant" autocomplete="off" style="width:100%; padding:8px; margin-top:3px; border-radius:8px; border:1px solid var(--border); background:var(--panel); color:var(--text); font-size:0.9rem;">
-        </label>
-        <label style="display:block; font-size:0.78rem; color:var(--muted); margin:8px 0 4px;">Mot de passe
-          <input type="password" id="accountPassword" placeholder="mot de passe" autocomplete="off" style="width:100%; padding:8px; margin-top:3px; border-radius:8px; border:1px solid var(--border); background:var(--panel); color:var(--text); font-size:0.9rem;">
-        </label>
-        <div id="securityQABlock">
-          <label style="display:block; font-size:0.78rem; color:var(--muted); margin:8px 0 4px;">Question de sécurité (pour récupérer le compte en cas de mot de passe oublié — utile seulement à la création)
-            <select id="securityQuestion" style="width:100%; padding:8px; margin-top:3px; border-radius:8px; border:1px solid var(--border); background:var(--panel); color:var(--text); font-size:0.9rem;">
-              <option value="Nom de votre premier animal de compagnie ?">Nom de votre premier animal de compagnie ?</option>
-              <option value="Ville où vous êtes né(e) ?">Ville où vous êtes né(e) ?</option>
-              <option value="Nom de votre meilleur ami d'enfance ?">Nom de votre meilleur ami d'enfance ?</option>
-              <option value="Votre plat préféré ?">Votre plat préféré ?</option>
-            </select>
-          </label>
-          <label style="display:block; font-size:0.78rem; color:var(--muted); margin:8px 0 4px;">Réponse
-            <input type="text" id="securityAnswer" placeholder="réponse" autocomplete="off" style="width:100%; padding:8px; margin-top:3px; border-radius:8px; border:1px solid var(--border); background:var(--panel); color:var(--text); font-size:0.9rem;">
-          </label>
-        </div>
-        <div id="rpInterviewBlock" style="margin-top:10px; border-top:1px solid var(--border); padding-top:10px;">
-          <p style="font-size:0.8rem; color:var(--accent-2); margin-bottom:6px;">🎭 Petit entretien RP (à la création uniquement)</p>
-          <fieldset style="border:none; padding:0; margin-bottom:10px;">
-            <legend style="font-size:0.78rem; color:var(--text);">1. Que signifie « RP » dans ce jeu ?</legend>
-            <label style="font-size:0.8rem; display:block;"><input type="radio" name="rpQ1" value="0"> Un mode de jeu sans aucune règle</label>
-            <label style="font-size:0.8rem; display:block;"><input type="radio" name="rpQ1" value="1"> Interpréter réellement son personnage, comme dans un jeu de rôle</label>
-            <label style="font-size:0.8rem; display:block;"><input type="radio" name="rpQ1" value="2"> Un raccourci clavier du jeu</label>
-          </fieldset>
-          <fieldset style="border:none; padding:0; margin-bottom:10px;">
-            <legend style="font-size:0.78rem; color:var(--text);">2. Un joueur vous tue sans aucune raison de jeu de rôle. Que faites-vous ?</legend>
-            <label style="font-size:0.8rem; display:block;"><input type="radio" name="rpQ2" value="0"> Je le tue en retour immédiatement</label>
-            <label style="font-size:0.8rem; display:block;"><input type="radio" name="rpQ2" value="1"> Je continue à jouer normalement et je signale au staff si besoin</label>
-            <label style="font-size:0.8rem; display:block;"><input type="radio" name="rpQ2" value="2"> Je l'insulte dans le chat</label>
-          </fieldset>
-          <fieldset style="border:none; padding:0; margin-bottom:10px;">
-            <legend style="font-size:0.78rem; color:var(--text);">3. Dans le chat général (hors personnage), quelqu'un dit où se cache un joueur. Pouvez-vous utiliser cette information avec votre personnage en jeu ?</legend>
-            <label style="font-size:0.8rem; display:block;"><input type="radio" name="rpQ3" value="0"> Oui, l'information est disponible, donc je peux l'utiliser</label>
-            <label style="font-size:0.8rem; display:block;"><input type="radio" name="rpQ3" value="1"> Non, mon personnage ne l'a pas appris en jeu, donc je ne dois pas l'utiliser</label>
-            <label style="font-size:0.8rem; display:block;"><input type="radio" name="rpQ3" value="2"> Oui, seulement si personne ne le remarque</label>
-          </fieldset>
-          <fieldset style="border:none; padding:0; margin-bottom:10px;">
-            <legend style="font-size:0.78rem; color:var(--text);">4. Vous êtes menotté et à terre après une arrestation RP. Que faites-vous ?</legend>
-            <label style="font-size:0.8rem; display:block;"><input type="radio" name="rpQ4" value="0"> Je me téléporte ailleurs pour fuir</label>
-            <label style="font-size:0.8rem; display:block;"><input type="radio" name="rpQ4" value="1"> Je reste RP et je coopère avec la situation</label>
-            <label style="font-size:0.8rem; display:block;"><input type="radio" name="rpQ4" value="2"> Je ferme le jeu</label>
-          </fieldset>
-          <fieldset style="border:none; padding:0; margin-bottom:6px;">
-            <legend style="font-size:0.78rem; color:var(--text);">5. Vous croisez un inconnu dans la rue et vous le tuez juste pour vous amuser, sans aucune raison. Est-ce autorisé ?</legend>
-            <label style="font-size:0.8rem; display:block;"><input type="radio" name="rpQ5" value="0"> Non, il faut une vraie raison de jeu de rôle pour tuer quelqu'un</label>
-            <label style="font-size:0.8rem; display:block;"><input type="radio" name="rpQ5" value="1"> Oui, c'est juste un jeu</label>
-            <label style="font-size:0.8rem; display:block;"><input type="radio" name="rpQ5" value="2"> Oui, si j'ai une arme sur moi</label>
-          </fieldset>
-          <p style="font-size:0.68rem; color:var(--muted);">Si vous répondez bien à la plupart des questions, votre compte est accepté automatiquement. Sinon, il reste en attente jusqu'à ce qu'un administrateur l'examine et décide de l'accepter ou non.</p>
-        </div>
-        <button type="button" id="forgotPasswordBtn" class="phone-btn" style="margin-top:8px;">🔓 Mot de passe oublié ?</button>
-        <p style="font-size:0.68rem; color:var(--muted); margin-top:6px;">Un compte retient votre progression (argent, missions, véhicules...) et vous permet de la retrouver depuis n'importe quel appareil, tant que vous jouez sur le même serveur avec les mêmes identifiants. Sans adresse de serveur ci-dessus, cette section est ignorée : vous jouez seul, sauvegarde sur cet appareil uniquement.</p>
-      </fieldset>
-      <p style="font-size:0.72rem; color:var(--muted); margin-top:8px;">Une fois en jeu, rendez-vous au commissariat pour votre enregistrement RP obligatoire (identité, empreintes) avant de pouvoir demander un métier — ceci est distinct du compte technique ci-dessus.</p>
+      <div class="wiz-nav"><button type="button" class="back" data-wiz-back="wizStepChoice">◀ Retour à l'accueil</button></div>
     </div>
-    <button id="startBtn">Entrer dans la cité</button>
+
+    <!-- ÉTAPE PERSONNAGE (création + solo) -->
+    <div class="wizard-step" id="wizStepIdentity" hidden>
+      <div class="wiz-progress">Votre personnage</div>
+      <div class="wiz-step-title" tabindex="-1">👤 Votre personnage</div>
+      <label class="wiz-field">Prénom du personnage
+        <input type="text" id="charFirstName" placeholder="Prénom" autocomplete="off">
+      </label>
+      <label class="wiz-field">Nom du personnage
+        <input type="text" id="charLastName" placeholder="Nom" autocomplete="off">
+      </label>
+      <fieldset class="wiz-fieldset">
+        <legend>Sexe du personnage</legend>
+        <label><input type="radio" name="charGender" value="homme" checked> 🧑 Homme</label>
+        <label><input type="radio" name="charGender" value="femme"> 👩 Femme</label>
+      </fieldset>
+      <div class="wiz-nav">
+        <button type="button" class="back" data-wiz-back="wizStepChoice">◀ Retour</button>
+        <button type="button" class="next" id="btnIdentityNext">Suivant ▶</button>
+      </div>
+    </div>
+
+    <!-- ÉTAPE IDENTIFIANTS (création + connexion) -->
+    <div class="wizard-step" id="wizStepAccount" hidden>
+      <div class="wiz-progress" id="wizAccountProgress">Vos identifiants</div>
+      <div class="wiz-step-title" tabindex="-1">🔑 Vos identifiants</div>
+      <label class="wiz-field">Identifiant
+        <input type="text" id="accountUsername" placeholder="identifiant" autocomplete="off">
+      </label>
+      <label class="wiz-field">Mot de passe
+        <input type="password" id="accountPassword" placeholder="mot de passe" autocomplete="off">
+      </label>
+      <p style="font-size:0.75rem; color:var(--muted); margin-top:8px;">Notez-les bien : ils vous permettront de retrouver votre progression sur n'importe quel appareil.</p>
+      <button type="button" id="forgotPasswordBtn" class="phone-btn" style="margin-top:10px;" hidden>🔓 Mot de passe oublié ?</button>
+      <div class="wiz-nav">
+        <button type="button" class="back" id="btnAccountBack">◀ Retour</button>
+        <button type="button" class="next" id="btnAccountNext">Suivant ▶</button>
+      </div>
+    </div>
+
+    <!-- ÉTAPE RÉCUPÉRATION (création uniquement) -->
+    <div class="wizard-step" id="wizStepRecovery" hidden>
+      <div class="wiz-progress">Récupération du compte</div>
+      <div class="wiz-step-title" tabindex="-1">🛟 En cas de mot de passe oublié</div>
+      <label class="wiz-field">Votre vrai prénom (connu de l'administrateur uniquement, jamais montré aux autres joueurs)
+        <input type="text" id="realFirstName" placeholder="votre vrai prénom" autocomplete="off">
+      </label>
+      <label class="wiz-field">Votre vrai nom
+        <input type="text" id="realLastName" placeholder="votre vrai nom" autocomplete="off">
+      </label>
+      <label class="wiz-field">Question de sécurité
+        <select id="securityQuestion">
+          <option value="Nom de votre premier animal de compagnie ?">Nom de votre premier animal de compagnie ?</option>
+          <option value="Ville où vous êtes né(e) ?">Ville où vous êtes né(e) ?</option>
+          <option value="Nom de votre meilleur ami d'enfance ?">Nom de votre meilleur ami d'enfance ?</option>
+          <option value="Votre plat préféré ?">Votre plat préféré ?</option>
+        </select>
+      </label>
+      <label class="wiz-field">Réponse à la question de sécurité
+        <input type="text" id="securityAnswer" placeholder="réponse" autocomplete="off">
+      </label>
+      <div class="wiz-nav">
+        <button type="button" class="back" data-wiz-back="wizStepAccount">◀ Retour</button>
+        <button type="button" class="next" id="btnRecoveryNext">Suivant ▶</button>
+      </div>
+    </div>
+
+    <!-- ÉTAPE ENTRETIEN RP (création uniquement) -->
+    <div class="wizard-step wiz-rp" id="wizStepRP" hidden>
+      <div class="wiz-progress">Entretien RP</div>
+      <div class="wiz-step-title" tabindex="-1">🎭 Petit entretien RP</div>
+      <div id="rpInterviewBlock">
+        <fieldset>
+          <legend>1. Que signifie « RP » dans ce jeu ?</legend>
+          <label><input type="radio" name="rpQ1" value="0"> Un mode de jeu sans aucune règle</label>
+          <label><input type="radio" name="rpQ1" value="1"> Interpréter réellement son personnage, comme dans un jeu de rôle</label>
+          <label><input type="radio" name="rpQ1" value="2"> Un raccourci clavier du jeu</label>
+        </fieldset>
+        <fieldset>
+          <legend>2. Un joueur vous tue sans aucune raison de jeu de rôle. Que faites-vous ?</legend>
+          <label><input type="radio" name="rpQ2" value="0"> Je le tue en retour immédiatement</label>
+          <label><input type="radio" name="rpQ2" value="1"> Je continue à jouer normalement et je signale au staff si besoin</label>
+          <label><input type="radio" name="rpQ2" value="2"> Je l'insulte dans le chat</label>
+        </fieldset>
+        <fieldset>
+          <legend>3. Dans le chat général (hors personnage), quelqu'un dit où se cache un joueur. Pouvez-vous utiliser cette information avec votre personnage en jeu ?</legend>
+          <label><input type="radio" name="rpQ3" value="0"> Oui, l'information est disponible, donc je peux l'utiliser</label>
+          <label><input type="radio" name="rpQ3" value="1"> Non, mon personnage ne l'a pas appris en jeu, donc je ne dois pas l'utiliser</label>
+          <label><input type="radio" name="rpQ3" value="2"> Oui, seulement si personne ne le remarque</label>
+        </fieldset>
+        <fieldset>
+          <legend>4. Vous êtes menotté et à terre après une arrestation RP. Que faites-vous ?</legend>
+          <label><input type="radio" name="rpQ4" value="0"> Je me téléporte ailleurs pour fuir</label>
+          <label><input type="radio" name="rpQ4" value="1"> Je reste RP et je coopère avec la situation</label>
+          <label><input type="radio" name="rpQ4" value="2"> Je ferme le jeu</label>
+        </fieldset>
+        <fieldset>
+          <legend>5. Vous croisez un inconnu dans la rue et vous le tuez juste pour vous amuser, sans aucune raison. Est-ce autorisé ?</legend>
+          <label><input type="radio" name="rpQ5" value="0"> Non, il faut une vraie raison de jeu de rôle pour tuer quelqu'un</label>
+          <label><input type="radio" name="rpQ5" value="1"> Oui, c'est juste un jeu</label>
+          <label><input type="radio" name="rpQ5" value="2"> Oui, si j'ai une arme sur moi</label>
+        </fieldset>
+      </div>
+      <p style="font-size:0.7rem; color:var(--muted);">Répondez bien à la plupart des questions pour être accepté automatiquement ; sinon, un administrateur examinera votre compte.</p>
+      <div class="wiz-nav">
+        <button type="button" class="back" data-wiz-back="wizStepRecovery">◀ Retour</button>
+        <button type="button" class="next" id="btnRPNext">Suivant ▶</button>
+      </div>
+    </div>
+
+    <!-- ÉTAPE FINALE : CONFIRMATION CRÉATION -->
+    <div class="wizard-step" id="wizStepConfirm" hidden>
+      <div class="wiz-progress">Dernière étape</div>
+      <div class="wiz-step-title" tabindex="-1">✅ Prêt à jouer</div>
+      <p>Tout est prêt ! Appuyez sur « Rejoindre la ville » pour créer votre compte et entrer dans Blind City.</p>
+      <p style="font-size:0.82rem; color:var(--warn);">🔊 Dans la ville, le jeu décrit tout à voix haute. Il vous sera demandé de désactiver votre lecteur d'écran (VoiceOver ou NVDA) pour éviter deux voix en même temps.</p>
+      <div class="wiz-nav">
+        <button type="button" class="back" data-wiz-back="wizStepRP">◀ Retour</button>
+        <button type="button" class="next" id="btnJoinRegister">🌆 Rejoindre la ville</button>
+      </div>
+    </div>
+
+    <!-- ÉTAPE FINALE : CONFIRMATION SOLO -->
+    <div class="wizard-step" id="wizStepSolo" hidden>
+      <div class="wiz-step-title" tabindex="-1">✅ Prêt à jouer (hors ligne)</div>
+      <p>Vous allez jouer seul sur cet appareil, sans compte. Votre progression est sauvegardée localement.</p>
+      <p style="font-size:0.82rem; color:var(--warn);">🔊 Dans la ville, le jeu décrit tout à voix haute. Il vous sera demandé de désactiver votre lecteur d'écran (VoiceOver ou NVDA) pour éviter deux voix en même temps.</p>
+      <div class="wiz-nav">
+        <button type="button" class="back" data-wiz-back="wizStepIdentity">◀ Retour</button>
+        <button type="button" class="next" id="btnJoinSolo">🌆 Rejoindre la ville</button>
+      </div>
+    </div>
   </div>
 </div>
 

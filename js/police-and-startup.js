@@ -1413,10 +1413,10 @@ function onStartButtonPressed() {
   Game.player.firstName = (firstNameField && firstNameField.value.trim()) || 'Joueur';
   Game.player.lastName = (lastNameField && lastNameField.value.trim()) || 'Anonyme';
   Game.player.gender = genderField ? genderField.value : 'homme';
-  // Auto-remplissage de sécurité de l'adresse du serveur : si le champ est
-  // vide, on le repré-remplit d'après l'adresse depuis laquelle le jeu est
-  // servi, pour que le multijoueur marche sans avoir à taper quoi que ce soit.
-  autofillServerUrl();
+  // Adresse du serveur : en mode "jouer seul", on vide le champ pour forcer le
+  // jeu hors ligne ; sinon on la remplit automatiquement (multijoueur).
+  if (wizardPath === 'solo') { const sf = el('charServerUrl'); if (sf) sf.value = ''; }
+  else autofillServerUrl();
 
   // Tout le reste du démarrage (connexion serveur, annonces, entrée en jeu) est
   // regroupé ici afin de pouvoir, à la toute première création de compte,
@@ -1536,40 +1536,79 @@ function autofillServerUrl() {
     }
   } catch (e) { /* ignore : le champ reste vide, comportement inchangé */ }
 }
+// Parcours choisi sur la première page de l'assistant : 'register' (créer un
+// compte), 'login' (se connecter) ou 'solo' (jouer seul, hors ligne).
+let wizardPath = 'login';
+
+// Affiche une seule sous-page (étape) de l'assistant et cache les autres, puis
+// place le focus sur son titre pour que le lecteur d'écran NATIF (VoiceOver,
+// NVDA) l'annonce. IMPORTANT : sur ces écrans, le jeu NE parle PAS lui-même
+// (pas de makeInputSpeakable ni de speak) pour ne pas se superposer au lecteur
+// d'écran de la personne. Le jeu ne reprend la parole qu'une fois entré en jeu.
+function showWizStep(id) {
+  document.querySelectorAll('#startOverlay .wizard-step').forEach(s => { s.hidden = (s.id !== id); });
+  const step = el(id);
+  if (!step) return;
+  const title = step.querySelector('.wiz-step-title');
+  const first = step.querySelector('input:not([type=hidden]):not([hidden]), select, button');
+  const target = title || first;
+  if (target) { try { target.focus(); } catch (e) { /* ignore */ } }
+}
+function setAccountAction(action) {
+  const radio = document.querySelector(`input[name="accountAction"][value="${action}"]`);
+  if (radio) radio.checked = true;
+}
+// Prépare l'étape "identifiants", partagée entre création et connexion : le
+// bouton principal et le retour changent selon le contexte.
+function enterAccountStep(path) {
+  const next = el('btnAccountNext');
+  const back = el('btnAccountBack');
+  const forgot = el('forgotPasswordBtn');
+  if (path === 'login') {
+    if (next) next.textContent = 'Se connecter et rejoindre 🌆';
+    if (forgot) forgot.hidden = false;
+    if (back) back.dataset.target = 'wizStepChoice';
+  } else {
+    if (next) next.textContent = 'Suivant ▶';
+    if (forgot) forgot.hidden = true;
+    if (back) back.dataset.target = 'wizStepIdentity';
+  }
+  showWizStep('wizStepAccount');
+}
 function bindStartButton() {
-  const btn = el('startBtn');
-  if (!btn) return;
-  btn.addEventListener('click', onStartButtonPressed);
-  // Filet de sécurité supplémentaire pour certains navigateurs mobiles
-  // qui peuvent avaler l'évènement "click" après un tap tactile rapide.
-  btn.addEventListener('touchend', (e) => { e.preventDefault(); onStartButtonPressed(); }, { passive: false });
-  // Pré-remplit le champ serveur d'après l'adresse depuis laquelle le jeu a été
-  // chargé (voir la fonction autofillServerUrl définie plus haut).
   autofillServerUrl();
-  // Les champs de l'écran de démarrage n'étaient reliés à aucune narration :
-  // sans lecteur d'écran externe, ils étaient muets. On applique le même
-  // système que le reste du jeu (écho caractère par caractère).
-  ['charFirstName', 'charLastName', 'charServerUrl', 'realFirstName', 'realLastName', 'accountUsername', 'accountPassword', 'securityAnswer'].forEach(id => {
-    const input = el(id);
-    if (input && typeof makeInputSpeakable === 'function') makeInputSpeakable(input);
+  // Un même utilitaire pour brancher clic + tape tactile (certains navigateurs
+  // mobiles avalent le "click" après un tap rapide).
+  const on = (id, fn) => {
+    const b = el(id);
+    if (!b) return;
+    b.addEventListener('click', fn);
+    b.addEventListener('touchend', (e) => { e.preventDefault(); fn(); }, { passive: false });
+  };
+  // Page d'accueil : choix du parcours.
+  on('btnGoRegister', () => { wizardPath = 'register'; setAccountAction('register'); showWizStep('wizStepIdentity'); });
+  on('btnGoLogin', () => { wizardPath = 'login'; setAccountAction('login'); enterAccountStep('login'); });
+  on('btnGoSolo', () => { wizardPath = 'solo'; showWizStep('wizStepIdentity'); });
+  on('btnGoHelp', () => showWizStep('wizStepHelp'));
+  // Boutons "Retour" à cible fixe (attribut data-wiz-back).
+  document.querySelectorAll('#startOverlay [data-wiz-back]').forEach(b => {
+    const target = b.getAttribute('data-wiz-back');
+    b.addEventListener('click', () => showWizStep(target));
+    b.addEventListener('touchend', (e) => { e.preventDefault(); showWizStep(target); }, { passive: false });
   });
+  // Retour de l'étape "identifiants" : cible variable selon le parcours.
+  on('btnAccountBack', () => showWizStep(el('btnAccountBack')?.dataset.target || 'wizStepChoice'));
+  // Enchaînements "Suivant".
+  on('btnIdentityNext', () => { if (wizardPath === 'solo') showWizStep('wizStepSolo'); else enterAccountStep('register'); });
+  on('btnAccountNext', () => { if (wizardPath === 'login') onStartButtonPressed(); else showWizStep('wizStepRecovery'); });
+  on('btnRecoveryNext', () => showWizStep('wizStepRP'));
+  on('btnRPNext', () => showWizStep('wizStepConfirm'));
+  // Boutons "Rejoindre la ville".
+  on('btnJoinRegister', onStartButtonPressed);
+  on('btnJoinSolo', onStartButtonPressed);
+  // Mot de passe oublié (dans l'étape identifiants, visible en mode connexion).
   const forgotBtn = el('forgotPasswordBtn');
   if (forgotBtn) forgotBtn.addEventListener('click', onForgotPasswordPressed);
-  const qSelect = el('securityQuestion');
-  if (qSelect) {
-    const announceQ = () => speak(`Question de sécurité : ${qSelect.value}`, 'interrupt');
-    qSelect.addEventListener('focus', announceQ);
-    qSelect.addEventListener('change', announceQ);
-  }
-  // Entretien RP : chaque case à cocher annonce sa question et son choix au
-  // focus, puisque les boutons radio ne sont narrés par aucun système existant.
-  document.querySelectorAll('#rpInterviewBlock input[type="radio"]').forEach(radio => {
-    radio.addEventListener('focus', () => {
-      const legend = radio.closest('fieldset')?.querySelector('legend')?.textContent || '';
-      const label = radio.closest('label')?.textContent?.trim() || '';
-      speak(`${legend} ${label}`, 'interrupt');
-    });
-  });
 }
 function onForgotPasswordPressed() {
   SpeechFix.unlock();
@@ -1757,6 +1796,11 @@ attachArrowFocusNav(document.getElementById('confirmPromptOverlay'));
 // annoncer deux fois.
 function announceFocusedControl(elm) {
   if (!elm || elm === document.body) return;
+  // Sur les écrans de démarrage (assistant de création de compte / connexion),
+  // on laisse le lecteur d'écran NATIF (VoiceOver, NVDA) faire toute la
+  // narration : le jeu se tait ici pour ne pas superposer deux voix. Il ne
+  // reprend la parole qu'une fois la personne entrée dans la ville.
+  if (elm.closest && elm.closest('#startOverlay')) return;
   const tag = elm.tagName;
   // Les boutons radio et cases à cocher n'étaient narrés nulle part (sauf
   // l'entretien RP, qui a sa propre annonce plus riche ci-dessus — on
