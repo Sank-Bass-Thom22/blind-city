@@ -47,6 +47,16 @@ const Game = {
     announce(`Vous vous tournez vers le ${this.HEADING_NAMES[this.heading]}.`, 'polite');
     updateHud();
   },
+  // Se tourner DIRECTEMENT vers un cap cardinal précis en un seul appui
+  // (touches ! ; , :), plutôt que de tourner pas à pas avec les flèches.
+  setHeadingDirect(h) {
+    if (this.unconscious) return announce('Vous êtes inconscient.', 'polite');
+    if (this.isCuffed) return announce('Vous êtes menotté(e), impossible d\'agir.', 'polite');
+    if (this.inVehicle && this.vehicle) { this.vehicle.heading = h; this.heading = h; }
+    else this.heading = h;
+    announce(`Cap : ${this.HEADING_NAMES[this.heading]}.`, 'polite');
+    updateHud();
+  },
   headingToDelta(h) {
     return { dx: h === 2 ? 1 : h === 6 ? -1 : 0, dy: h === 4 ? 1 : h === 0 ? -1 : 0 };
   },
@@ -588,13 +598,15 @@ const Game = {
     this._lastGuidanceMsg = now;
 
     const absDx = Math.abs(dx), absDy = Math.abs(dy);
-    // Choix de l'axe à corriger en priorité, avec une marge de 2 cases pour
-    // ne pas changer d'avis au moindre petit écart (hystérésis).
+    // Choix de l'axe à corriger en priorité, avec une marge large (5 cases)
+    // pour ne changer d'avis qu'une fois l'autre axe VRAIMENT plus urgent —
+    // une marge trop petite faisait dire "tout droit" puis "tournez" en
+    // boucle sans que ça dure jamais, ce qui était signalé comme incohérent.
     if (!this.guidanceAxis) this.guidanceAxis = absDx >= absDy ? 'x' : 'y';
     else {
       const current = this.guidanceAxis === 'x' ? absDx : absDy;
       const other = this.guidanceAxis === 'x' ? absDy : absDx;
-      if (current === 0 || other > current + 2) this.guidanceAxis = this.guidanceAxis === 'x' ? 'y' : 'x';
+      if (current === 0 || other > current + 5) this.guidanceAxis = this.guidanceAxis === 'x' ? 'y' : 'x';
     }
     let axis = this.guidanceAxis;
     let remaining = axis === 'x' ? absDx : absDy;
@@ -611,6 +623,13 @@ const Game = {
     else if (diff === 2) instruction = `Tournez à droite, puis ${meters} mètres.`;
     else if (diff === 6) instruction = `Tournez à gauche, puis ${meters} mètres.`;
     else instruction = `Faites demi-tour, puis ${meters} mètres.`;
+    // Avertir d'un obstacle juste devant AVANT de foncer dedans, pas après
+    // seulement (avant, on ne le disait qu'une fois rentré dans le mur).
+    if (diff === 0) {
+      const { dx: hdx, dy: hdy } = this.headingToDelta(this.heading);
+      const nx = Math.round(this.x + hdx), ny = Math.round(this.y + hdy);
+      if (City.isSolid(nx, ny)) instruction = `Attention, obstacle juste devant. ${instruction}`;
+    }
     // Détection de sur-place : si exactement la même consigne à la même
     // distance revient plusieurs fois d'affilée, c'est que le joueur ne
     // progresse pas — on le lui dit clairement au lieu de répéter en boucle.

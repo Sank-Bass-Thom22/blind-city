@@ -625,6 +625,10 @@ function setupInput() {
     else if (key === 'pageup') { if (Game.inVehicle && VEHICLE_CATALOG[Game.vehicle.type].flies) { Game.altitude = Math.min(120, Game.altitude + 5); Game.vehicle.altitude = Game.altitude; announce('Altitude ' + Math.round(Game.altitude) + ' m.', 'polite'); } }
     else if (key === 'pagedown') { if (Game.inVehicle && VEHICLE_CATALOG[Game.vehicle.type].flies) { Game.altitude = Math.max(0, Game.altitude - 5); Game.vehicle.altitude = Game.altitude; announce('Altitude ' + Math.round(Game.altitude) + ' m.', 'polite'); } }
     else if (['1','2','3','4','5','6','7','8','9'].includes(key)) Game.target(parseInt(key, 10));
+    else if (key === '!') Game.setHeadingDirect(0); // Nord
+    else if (key === ';') Game.setHeadingDirect(2); // Est
+    else if (key === ',') Game.setHeadingDirect(4); // Sud
+    else if (key === ':') Game.setHeadingDirect(6); // Ouest
     updateHud();
   });
   document.addEventListener('keyup', (e) => {

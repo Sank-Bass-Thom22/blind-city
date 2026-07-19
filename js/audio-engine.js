@@ -868,7 +868,7 @@ const Weather = {
       this.state = this.state === 'clair' ? 'pluie' : 'clair';
       announce(this.state === 'pluie' ? 'Le ciel se couvre, il commence à pleuvoir.' : 'La pluie s\'arrête, le ciel se dégage.', 'polite');
     }
-    if (this.state === 'pluie') AudioLib.playLoop('amb_pluie', 1.0); else AudioLib.stopLoop('amb_pluie');
+    if (this.state === 'pluie') AudioLib.playLoop('amb_pluie', 0.35); else AudioLib.stopLoop('amb_pluie');
   },
 };
 const AmbientZones = {
