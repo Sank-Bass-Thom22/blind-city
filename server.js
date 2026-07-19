@@ -29,11 +29,12 @@
  *   Le serveur lit automatiquement process.env.PORT, ce qui fonctionne sans
  *   configuration particulière sur la plupart des hébergeurs Node.js gratuits.
  *
- * Important : cette version est volontairement simple (état en mémoire,
- * pas de base de données, pas de vérification anti-triche de l'économie).
- * Elle suffit pour jouer entre amis en confiance. Dites-moi si vous voulez
- * ajouter une persistance supplémentaire : c'est une étape raisonnable à
- * partir de cette base.
+ * Persistance : l'état "vivant" (positions, actualités) reste en mémoire,
+ * tandis que les comptes joueurs et les données staff sont sauvegardés. Par
+ * défaut dans des fichiers JSON locaux ; mais sur un hébergeur dont le disque
+ * s'efface au redémarrage (Render gratuit), on peut activer une base Supabase
+ * gratuite via les variables d'environnement SUPABASE_URL et
+ * SUPABASE_SERVICE_KEY — les comptes survivent alors aux mises en veille.
  */
 
 const http = require('http');
@@ -41,6 +42,41 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const WebSocket = require('ws');
+
+// --- Persistance des données (comptes joueurs + données staff) ---
+// Par défaut, tout est stocké dans des fichiers JSON locaux. MAIS sur un
+// hébergeur gratuit comme Render, le disque est "éphémère" : il est effacé à
+// chaque mise en veille/redémarrage, ce qui ferait perdre les comptes joueurs.
+// Pour éviter ça, on branche une base Supabase (gratuite) : il suffit de
+// définir les variables d'environnement SUPABASE_URL et SUPABASE_SERVICE_KEY.
+// Les données sont alors stockées dans la table game_state(key, data) et
+// survivent aux redémarrages. Sans ces variables, on garde les fichiers locaux.
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ewruthgmecfhldkuihid.supabase.co';
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY || '';
+let supabase = null;
+if (SUPABASE_KEY) {
+  try {
+    const { createClient } = require('@supabase/supabase-js');
+    supabase = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
+    console.log('[persistance] Supabase activé — les données survivront aux redémarrages.');
+  } catch (e) {
+    console.error('[persistance] @supabase/supabase-js indisponible — retour aux fichiers locaux. Détail :', e.message);
+  }
+}
+// Lit une entrée de la table game_state. Renvoie null si la clé n'existe pas
+// encore (normal au tout premier démarrage). Lève une erreur en cas de vrai
+// problème (réseau, droits) : on préfère alors s'arrêter plutôt que risquer
+// d'écraser des données existantes avec un état vide.
+async function supabaseLoad(key) {
+  const { data, error } = await supabase.from('game_state').select('data').eq('key', key).maybeSingle();
+  if (error) throw new Error(`lecture "${key}" : ${error.message}`);
+  return data ? data.data : null;
+}
+// Écrit (insère ou met à jour) une entrée. Appelée en "fire-and-forget".
+async function supabaseSave(key, value) {
+  const { error } = await supabase.from('game_state').upsert({ key, data: value }, { onConflict: 'key' });
+  if (error) console.error(`[persistance] écriture "${key}" échouée :`, error.message);
+}
 
 const STAFF_FILE = path.join(__dirname, 'staff-data.json');
 // Codes administrateur : lus depuis les variables d'environnement (jamais en
@@ -61,6 +97,7 @@ try {
   if (loaded && loaded.codes) { staffData = loaded; if (!Array.isArray(staffData.cityEdits)) staffData.cityEdits = []; if (!Array.isArray(staffData.bans)) staffData.bans = []; if (!Array.isArray(staffData.worldEdits)) staffData.worldEdits = []; }
 } catch (e) { /* fichier absent au premier démarrage : on garde les valeurs par défaut ci-dessus */ }
 function saveStaffData() {
+  if (supabase) { supabaseSave('staff', staffData); return; }
   try { fs.writeFileSync(STAFF_FILE, JSON.stringify(staffData, null, 2), 'utf8'); } catch (e) { console.error('Impossible d\'enregistrer staff-data.json :', e); }
 }
 
@@ -78,6 +115,7 @@ try {
   if (loaded && loaded.accounts) accountsData = loaded;
 } catch (e) { /* fichier absent au premier démarrage */ }
 function saveAccountsData() {
+  if (supabase) { supabaseSave('accounts', accountsData); return; }
   try { fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify(accountsData, null, 2), 'utf8'); } catch (e) { console.error('Impossible d\'enregistrer accounts-data.json :', e); }
 }
 function hashPassword(password, salt) {
@@ -849,7 +887,35 @@ setInterval(() => {
   });
 }, 20000);
 
-server.listen(PORT, () => {
-  console.log(`Blind City Online — serveur relais en écoute sur le port ${PORT}`);
-  console.log(`Graine de ville partagée pour cette session : ${WORLD_SEED}`);
-});
+// Au démarrage : si Supabase est activé, on charge d'abord les comptes et les
+// données staff depuis la base AVANT d'accepter des connexions. En cas d'erreur
+// de chargement, on s'arrête volontairement (l'hébergeur relancera le serveur)
+// plutôt que de démarrer sur un état vide qui écraserait la base.
+async function init() {
+  if (supabase) {
+    try {
+      const st = await supabaseLoad('staff');
+      if (st && st.codes) {
+        staffData = st;
+        if (!Array.isArray(staffData.bans)) staffData.bans = [];
+        if (!Array.isArray(staffData.cityEdits)) staffData.cityEdits = [];
+        if (!Array.isArray(staffData.worldEdits)) staffData.worldEdits = [];
+      } else {
+        // Tout premier démarrage : on transfère les codes/données du fichier vers Supabase.
+        await supabaseSave('staff', staffData);
+      }
+      const acc = await supabaseLoad('accounts');
+      if (acc && acc.accounts) accountsData = acc;
+      else await supabaseSave('accounts', accountsData);
+      console.log('[persistance] Comptes et données staff chargés depuis Supabase.');
+    } catch (e) {
+      console.error('[persistance] ERREUR au chargement Supabase — arrêt volontaire pour éviter toute perte de données (l\'hébergeur redémarrera le serveur). Détail :', e.message);
+      process.exit(1);
+    }
+  }
+  server.listen(PORT, () => {
+    console.log(`Blind City Online — serveur relais en écoute sur le port ${PORT}`);
+    console.log(`Graine de ville partagée pour cette session : ${WORLD_SEED}`);
+  });
+}
+init();
