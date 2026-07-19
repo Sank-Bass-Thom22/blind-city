@@ -1413,12 +1413,17 @@ function onStartButtonPressed() {
   Game.player.firstName = (firstNameField && firstNameField.value.trim()) || 'Joueur';
   Game.player.lastName = (lastNameField && lastNameField.value.trim()) || 'Anonyme';
   Game.player.gender = genderField ? genderField.value : 'homme';
-  // "Bienvenue à Blind City" ne doit jouer qu'une seule fois : à la toute première
-  // création de compte sur cet appareil, jamais aux lancements suivants.
-  if (!localStorage.getItem('blind_city_account_created') && !localStorage.getItem('city_blind_account_created')) {
-    AudioLib.playOnce('sfx_bienvenue');
-    localStorage.setItem('blind_city_account_created', '1');
-  }
+  // Auto-remplissage de sécurité de l'adresse du serveur : si le champ est
+  // vide, on le repré-remplit d'après l'adresse depuis laquelle le jeu est
+  // servi, pour que le multijoueur marche sans avoir à taper quoi que ce soit.
+  autofillServerUrl();
+
+  // Tout le reste du démarrage (connexion serveur, annonces, entrée en jeu) est
+  // regroupé ici afin de pouvoir, à la toute première création de compte,
+  // ATTENDRE la fin du son "Bienvenue à Blind City" avant de l'enchaîner —
+  // sinon les annonces vocales et la musique d'intro le couperaient en plein
+  // milieu (c'était le bug : le son ne jouait pas jusqu'au bout).
+  const continueStart = () => {
   const serverUrl = (el('charServerUrl')?.value || '').trim();
   const accountAction = document.querySelector('input[name="accountAction"]:checked')?.value || 'login';
   const accountUsername = (el('accountUsername')?.value || '').trim();
@@ -1489,6 +1494,47 @@ function onStartButtonPressed() {
   }
 
   startGame();
+  };
+
+  // Première création de compte sur cet appareil : on joue "Bienvenue à Blind
+  // City" EN ENTIER, puis on enchaîne le reste. Les fois suivantes : direct.
+  const firstTime = !localStorage.getItem('blind_city_account_created') && !localStorage.getItem('city_blind_account_created');
+  if (firstTime) {
+    localStorage.setItem('blind_city_account_created', '1');
+    const welcome = AudioLib.playOnce('sfx_bienvenue');
+    if (welcome) {
+      let proceeded = false;
+      const go = () => { if (proceeded) return; proceeded = true; continueStart(); };
+      welcome.addEventListener('ended', go, { once: true });
+      welcome.addEventListener('error', go, { once: true });
+      // Filet de sécurité si l'évènement 'ended' ne se déclenche pas selon le
+      // navigateur : on continue après la durée du clip (+ marge), ou 12 s.
+      const armFallback = () => setTimeout(go, ((welcome.duration && isFinite(welcome.duration)) ? welcome.duration * 1000 : 12000) + 1500);
+      if (welcome.duration && isFinite(welcome.duration)) armFallback();
+      else welcome.addEventListener('loadedmetadata', armFallback, { once: true });
+      // Dernier filet : si le son ne démarre pas du tout, ne pas rester bloqué.
+      setTimeout(go, 15000);
+    } else {
+      continueStart();
+    }
+  } else {
+    continueStart();
+  }
+}
+
+// Pré-remplit le champ "Serveur multijoueur" avec l'adresse depuis laquelle le
+// jeu est servi (ex : wss://blind-city.onrender.com), pour que la personne
+// n'ait rien à taper. Ne touche pas au champ s'il contient déjà une adresse (au
+// cas où quelqu'un viserait un AUTRE serveur). Silencieux si ouvert en local
+// (file://) ou en cas d'imprévu, pour ne jamais empêcher le démarrage du jeu.
+function autofillServerUrl() {
+  try {
+    const serverField = el('charServerUrl');
+    if (serverField && !serverField.value && location.protocol !== 'file:' && location.host) {
+      const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      serverField.value = `${wsProtocol}//${location.host}`;
+    }
+  } catch (e) { /* ignore : le champ reste vide, comportement inchangé */ }
 }
 function bindStartButton() {
   const btn = el('startBtn');
@@ -1497,20 +1543,9 @@ function bindStartButton() {
   // Filet de sécurité supplémentaire pour certains navigateurs mobiles
   // qui peuvent avaler l'évènement "click" après un tap tactile rapide.
   btn.addEventListener('touchend', (e) => { e.preventDefault(); onStartButtonPressed(); }, { passive: false });
-  // Préremplit l'adresse du serveur d'après celle depuis laquelle le jeu a
-  // été chargé (si le jeu est servi par server.js, la personne est déjà sur
-  // la bonne adresse — pas la peine de la lui faire retaper). Le champ reste
-  // modifiable pour qui voudrait rejoindre un AUTRE serveur. Entouré d'un
-  // try/catch : en cas d'ouverture du fichier en local (file://) ou de tout
-  // cas imprévu, on se contente de laisser le champ vide comme avant, sans
-  // jamais empêcher le jeu de démarrer.
-  try {
-    const serverField = el('charServerUrl');
-    if (serverField && !serverField.value && location.protocol !== 'file:' && location.host) {
-      const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      serverField.value = `${wsProtocol}//${location.host}`;
-    }
-  } catch (e) { /* ignore : le champ reste vide, comportement inchangé */ }
+  // Pré-remplit le champ serveur d'après l'adresse depuis laquelle le jeu a été
+  // chargé (voir la fonction autofillServerUrl définie plus haut).
+  autofillServerUrl();
   // Les champs de l'écran de démarrage n'étaient reliés à aucune narration :
   // sans lecteur d'écran externe, ils étaient muets. On applique le même
   // système que le reste du jeu (écho caractère par caractère).
