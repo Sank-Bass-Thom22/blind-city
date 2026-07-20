@@ -596,6 +596,23 @@ function openMapMenu() {
 /* ============================================================
    INPUT HANDLING — clavier, tactile, gestes
 ============================================================ */
+// Guide vocal de tous les gestes tactiles : permet d'apprendre les commandes
+// du téléphone sans lecteur d'écran. Déclenché par 4 taps à 2 doigts, 4 taps à
+// 3 doigts, un tap à 4 doigts, ou la touche H.
+function announceGestureHelp() {
+  const lignes = [
+    'Guide des gestes tactiles de Blind City.',
+    'Un doigt, glisser et garder le doigt appuyé : bouger en continu. Vers le haut, avancer ; vers le bas, reculer ; vers la gauche, tourner à gauche ; vers la droite, tourner à droite. Un glissement rapide fait un seul pas.',
+    'Un doigt, taper : une fois, interagir ; deux fois, scanner les alentours ; trois fois, dire ma position ; quatre fois, freiner.',
+    'Deux doigts, taper : une fois, inventaire ; deux fois, téléphone ; trois fois, menu principal ; quatre fois, micro de proximité.',
+    'Deux doigts, glisser : haut, boussole ; bas, radar des lieux ; gauche, retrouver ma voiture ; droite, changer la fréquence radio.',
+    'Trois doigts, glisser : haut, tirer ; bas, recharger ; gauche, sortir ou ranger l\'arme ; droite, coup de poing.',
+    'Trois doigts, taper : une fois, cibler la personne la plus proche ; deux fois, sirène ; trois fois, menu police.',
+    'Quatre doigts, glisser : haut, téléphone ; bas, ordinateur ; gauche, menu du véhicule ; droite, visite guidée de la ville.',
+    'Quatre doigts, taper, ou quatre taps à deux ou trois doigts : réentendre ce guide.',
+  ];
+  announce(lignes.join(' '), 'assertive');
+}
 function setupInput() {
   // Keyboard
   document.addEventListener('keydown', (e) => {
@@ -699,82 +716,145 @@ function setupInput() {
   el('touchBrake').addEventListener('click', () => Game.inVehicle ? Game.brakeVehicle() : Game.move(0, 1));
   el('touchCompass').addEventListener('click', () => Game.announceLocation());
 
-  // Touch gestures (1-5 doigts + balayage horizontal + navigation quantité/menu)
-  let touchStart = 0, touchCount = 0, touchTimer = null, lastTapTime = 0;
-  let swipeStartX = 0, swipeStartY = 0;
-  document.body.addEventListener('touchstart', (e) => {
-    touchCount = e.touches.length; touchStart = Date.now();
-    if (e.touches[0]) { swipeStartX = e.touches[0].clientX; swipeStartY = e.touches[0].clientY; }
-    if (QtyPicker.active || el('menuOverlay').style.display === 'flex') return; // pas de menu RP contextuel pendant ces écrans
-    touchTimer = setTimeout(() => {
-      if (touchCount === 1) toggleProxVoice();
-      else if (touchCount === 2) Game.scan();
-      else if (touchCount === 3) Game.interact();
-      else if (touchCount === 4) Game.announceInventory();
-      else if (touchCount >= 5) Phone.open ? Phone.closePhone() : Phone.openPhone();
-    }, 600);
-  }, { passive: true });
-  document.body.addEventListener('touchend', (e) => {
-    clearTimeout(touchTimer);
-    const duration = Date.now() - touchStart;
-    const endTouch = e.changedTouches && e.changedTouches[0];
-    const dx = endTouch ? endTouch.clientX - swipeStartX : 0;
-    const dy = endTouch ? endTouch.clientY - swipeStartY : 0;
-    const isSwipe = Math.abs(dx) > 40 || Math.abs(dy) > 40;
-    const isTap = duration < 250 && !isSwipe;
+  // ===== SYSTÈME DE GESTES TACTILES (mobile, lecteur d'écran désactivé) =====
+  // Un doigt glissé ET maintenu = déplacement/rotation en continu (haut avancer,
+  // bas reculer, gauche/droite tourner ; un glissement rapide = un seul pas).
+  // Taps 1 à 4 fois et balayages 4 directions, à 1/2/3/4 doigts = autant de
+  // raccourcis (voir announceGestureHelp). Actif uniquement une fois entré en
+  // jeu : sur l'écran de création de compte, on laisse le lecteur d'écran natif.
+  const isOpen = (id) => { const x = el(id); return !!x && x.style.display === 'flex'; };
+  const inGame = () => { const s = el('startOverlay'); return !!s && s.style.display === 'none'; };
+  const overlayOpen = () => (typeof QtyPicker !== 'undefined' && QtyPicker.active) || isOpen('menuOverlay') || isOpen('phoneOverlay') || isOpen('computerOverlay') || isOpen('shopDialog') || isOpen('freqOverlay') || isOpen('qtyOverlay') || isOpen('textPromptOverlay') || isOpen('confirmPromptOverlay') || isOpen('accountStatusOverlay');
 
-    // --- Priorité 1 : sélecteur de quantité ouvert (dons, dépôts, munitions...) ---
-    if (QtyPicker.active) {
-      if (touchCount === 2 && isSwipe && Math.abs(dy) > Math.abs(dx) && dy > 0) { QtyPicker.cancel(); return; } // 2 doigts glisser bas = annuler
-      if (touchCount === 1 && isSwipe) {
-        if (Math.abs(dy) > Math.abs(dx)) QtyPicker.change(dy < 0 ? 1 : -1); // glisser haut = +1, bas = -1
-        else QtyPicker.change(dx > 0 ? 5 : -5); // glisser droite = +5, gauche = -5
-        return;
-      }
-      if (touchCount === 1 && isTap) {
-        const now = Date.now();
-        if (now - lastTapTime < 350) { QtyPicker.confirm(); lastTapTime = 0; }
-        else { lastTapTime = now; speak(String(QtyPicker.value), 'polite'); }
-        return;
+  let gActive = false, gStartT = 0, gMaxFingers = 0, gStartX = 0, gStartY = 0, gMoved = false;
+  let gHoldDir = null, gHoldTimer = null;
+  let gTapCount = 0, gTapFingers = 0, gTapTimer = null, gLastTap = 0;
+  const SW = 40; // seuil de balayage en pixels
+
+  function gStopHold() { if (gHoldTimer) { clearInterval(gHoldTimer); gHoldTimer = null; } gHoldDir = null; }
+  function gStartHold(dir) {
+    if (gHoldDir === dir) return;
+    gStopHold(); gHoldDir = dir;
+    const step = () => {
+      if (dir === 'up') Game.moveForward();
+      else if (dir === 'down') Game.moveBackward();
+      else if (dir === 'left') Game.turn(-2);
+      else if (dir === 'right') Game.turn(2);
+    };
+    step(); // action immédiate : un glissement rapide fait déjà un pas
+    gHoldTimer = setInterval(step, 300);
+  }
+  function gFireTap(fingers, count) {
+    if (fingers === 1) {
+      if (count === 1) Game.interact();
+      else if (count === 2) Game.scan();
+      else if (count === 3) Game.announceLocation();
+      else (Game.inVehicle ? Game.brakeVehicle() : Game.move(0, 1));
+    } else if (fingers === 2) {
+      if (count === 1) Game.announceInventory();
+      else if (count === 2) (Phone.open ? Phone.closePhone() : Phone.openPhone());
+      else if (count === 3) openMainMenu();
+      else toggleProxVoice();
+    } else if (fingers === 3) {
+      if (count === 1) Game.target(1);
+      else if (count === 2) Game.toggleSiren();
+      else if (count === 3) Game.openPoliceMenu();
+      else announceGestureHelp();
+    } else {
+      announceGestureHelp();
+    }
+  }
+  function gFireSwipe(fingers, dir) {
+    if (fingers === 2) {
+      if (dir === 'up') Game.soundCompass();
+      else if (dir === 'down') Game.soundRadar();
+      else if (dir === 'left') Game.findMyCar();
+      else FreqPicker.open();
+    } else if (fingers === 3) {
+      if (dir === 'up') Game.shoot();
+      else if (dir === 'down') Game.reload();
+      else if (dir === 'left') Game.toggleWeapon();
+      else Game.punch();
+    } else if (fingers >= 4) {
+      if (dir === 'up') Phone.openPhone();
+      else if (dir === 'down') Computer.boot();
+      else if (dir === 'left') Game.openVehicleMenu();
+      else Game.cityTour();
+    }
+  }
+  const dirOf = (dx, dy) => Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+
+  document.body.addEventListener('touchstart', (e) => {
+    if (!inGame()) return;
+    const n = e.touches.length;
+    if (!gActive) { gActive = true; gStartT = Date.now(); gMaxFingers = n; gMoved = false; const t = e.touches[0]; if (t) { gStartX = t.clientX; gStartY = t.clientY; } }
+    else if (n > gMaxFingers) gMaxFingers = n;
+    if (n >= 2 && !overlayOpen() && e.cancelable) e.preventDefault();
+  }, { passive: false });
+
+  document.body.addEventListener('touchmove', (e) => {
+    if (!gActive || !inGame() || overlayOpen()) return;
+    const n = e.touches.length;
+    if (n !== 1 || gMaxFingers !== 1) { if (n >= 2 && e.cancelable) e.preventDefault(); return; }
+    const t = e.touches[0]; if (!t) return;
+    const dx = t.clientX - gStartX, dy = t.clientY - gStartY;
+    if (Math.abs(dx) > SW || Math.abs(dy) > SW) {
+      gMoved = true; if (e.cancelable) e.preventDefault();
+      gStartHold(dirOf(dx, dy));
+    }
+  }, { passive: false });
+
+  document.body.addEventListener('touchend', (e) => {
+    if (!inGame()) return;
+    if (e.touches.length > 0) return; // attendre que tous les doigts soient levés
+    if (!gActive) return;
+    gActive = false;
+    const fingers = gMaxFingers, moved = gMoved, duration = Date.now() - gStartT;
+    gMaxFingers = 0;
+    if (gHoldDir) { gStopHold(); return; } // déplacement continu terminé
+    const end = e.changedTouches && e.changedTouches[0];
+    const dx = end ? end.clientX - gStartX : 0, dy = end ? end.clientY - gStartY : 0;
+    const isSwipe = Math.abs(dx) > SW || Math.abs(dy) > SW;
+    const dir = dirOf(dx, dy);
+    const isTap = !moved && !isSwipe && duration < 500;
+
+    // Sélecteur de quantité ouvert (dons, dépôts, munitions...).
+    if (typeof QtyPicker !== 'undefined' && QtyPicker.active) {
+      if (fingers === 2 && isSwipe && dir === 'down') { QtyPicker.cancel(); return; }
+      if (fingers === 1 && isSwipe) { if (Math.abs(dy) > Math.abs(dx)) QtyPicker.change(dy < 0 ? 1 : -1); else QtyPicker.change(dx > 0 ? 5 : -5); return; }
+      if (fingers === 1 && isTap) { const now = Date.now(); if (now - gLastTap < 350) { QtyPicker.confirm(); gLastTap = 0; } else { gLastTap = now; speak(String(QtyPicker.value), 'polite'); } return; }
+      return;
+    }
+    // Menu à cartes ouvert : balayage gauche/droite pour parcourir, double-tap pour valider.
+    if (isOpen('menuOverlay')) {
+      const cards = Array.from(document.querySelectorAll('#menuContent .menu-card'));
+      if (cards.length) {
+        if (fingers === 1 && isSwipe && Math.abs(dx) > Math.abs(dy)) { let idx = cards.indexOf(document.activeElement); idx = idx === -1 ? 0 : (dx > 0 ? Math.min(cards.length - 1, idx + 1) : Math.max(0, idx - 1)); cards[idx].focus(); speak(cards[idx].querySelector('h4')?.textContent || '', 'polite'); return; }
+        if (fingers === 1 && isTap) { const now = Date.now(); if (now - gLastTap < 350 && cards.includes(document.activeElement)) { document.activeElement.click(); gLastTap = 0; } else { gLastTap = now; if (!cards.includes(document.activeElement)) { cards[0].focus(); speak(cards[0].querySelector('h4')?.textContent || '', 'polite'); } } return; }
+        if (fingers === 2 && isSwipe && dir === 'down') { closeMenu(); return; }
       }
       return;
     }
+    // Téléphone / ordinateur : 2 doigts vers le bas = fermer ; le reste passe par
+    // leurs propres commandes.
+    if (isOpen('phoneOverlay')) { if (isSwipe && fingers >= 2 && dir === 'down') Phone.closePhone(); return; }
+    if (isOpen('computerOverlay')) { if (isSwipe && fingers >= 2 && dir === 'down') { const b = el('closeComputer'); if (b) b.click(); } return; }
+    if (overlayOpen()) return;
 
-    // --- Priorité 2 : un menu à cartes est ouvert : le même geste sert à s'y déplacer ---
-    const menuOpen = el('menuOverlay').style.display === 'flex';
-    if (menuOpen) {
-      const cards = Array.from(document.querySelectorAll('#menuContent .menu-card'));
-      if (cards.length) {
-        if (touchCount === 1 && isSwipe && Math.abs(dx) > Math.abs(dy)) {
-          let idx = cards.indexOf(document.activeElement);
-          idx = idx === -1 ? 0 : (dx > 0 ? Math.min(cards.length - 1, idx + 1) : Math.max(0, idx - 1));
-          cards[idx].focus();
-          speak(cards[idx].querySelector('h4')?.textContent || '', 'polite');
-          return;
-        }
-        if (touchCount === 1 && isTap) {
-          const now = Date.now();
-          if (now - lastTapTime < 350 && cards.includes(document.activeElement)) { document.activeElement.click(); lastTapTime = 0; }
-          else {
-            lastTapTime = now;
-            if (!cards.includes(document.activeElement)) { cards[0].focus(); speak(cards[0].querySelector('h4')?.textContent || '', 'polite'); }
-          }
-          return;
-        }
-        if (touchCount === 2 && isSwipe && Math.abs(dy) > Math.abs(dx) && dy > 0) { closeMenu(); return; } // 2 doigts glisser bas = fermer le menu
-      }
+    // --- EN JEU ---
+    if (isSwipe) {
+      if (fingers === 1) { gStartHold(dir); gStopHold(); return; } // filet : un pas si touchmove n'a pas déclenché
+      gFireSwipe(fingers, dir); return;
     }
+    if (isTap) {
+      if (gTapFingers !== fingers) { gTapFingers = fingers; gTapCount = 0; }
+      gTapCount++;
+      clearTimeout(gTapTimer);
+      gTapTimer = setTimeout(() => { gFireTap(gTapFingers, gTapCount); gTapCount = 0; gTapFingers = 0; }, 380);
+    }
+  }, { passive: false });
 
-    // --- Comportement normal (déplacement, scan, interaction...) ---
-    if (touchCount === 2 && duration < 500 && isSwipe && Math.abs(dx) > Math.abs(dy) * 1.5) { Game.soundRadar(); return; }
-    if (duration < 200 && !isSwipe) {
-      if (touchCount === 1) Game.move(0, -1);
-      else if (touchCount === 2) Game.scan();
-      else if (touchCount === 3) Game.interact();
-      else if (touchCount === 4) Game.announceInventory();
-      else if (touchCount >= 5) openMainMenu();
-    }
-  }, { passive: true });
+  document.body.addEventListener('touchcancel', () => { gStopHold(); gActive = false; gMaxFingers = 0; }, { passive: true });
 
   // Prevent zoom
   document.addEventListener('gesturestart', (e) => e.preventDefault());
@@ -918,7 +998,7 @@ function startGame(seed) {
   try { announceTouchLabels(); } catch (e) { console.error('announceTouchLabels() a échoué :', e); }
   const p = Game.player;
   try {
-    announce(`Vous êtes maintenant dans Blind City. À partir de maintenant, le jeu décrit tout à voix haute : veuillez désactiver votre lecteur d'écran, VoiceOver ou NVDA, pour ne pas entendre deux voix en même temps. Bienvenue, ${p.firstName} ${p.lastName}. Pour vous repérer : appuyez sur Maj plus C pour une visite guidée de la ville, F pour balayer les lieux autour de vous, C pour la boussole, et Maj plus B pour activer les balises sonores. Les champs de texte sont maintenant lus par le jeu lui-même, caractère par caractère. Seule la fenêtre système d'autorisation du microphone reste hors du contrôle du jeu : autorisez-la une fois pour toutes dans les réglages du navigateur si besoin. Rendez-vous au commissariat pour votre enregistrement avant de choisir un métier.`, 'assertive');
+    announce(`Vous êtes maintenant dans Blind City. À partir de maintenant, le jeu décrit tout à voix haute : veuillez désactiver votre lecteur d'écran, VoiceOver ou NVDA, pour ne pas entendre deux voix en même temps. Bienvenue, ${p.firstName} ${p.lastName}. Pour vous repérer : appuyez sur Maj plus C pour une visite guidée de la ville, F pour balayer les lieux autour de vous, C pour la boussole, et Maj plus B pour activer les balises sonores. Les champs de texte sont maintenant lus par le jeu lui-même, caractère par caractère. Seule la fenêtre système d'autorisation du microphone reste hors du contrôle du jeu : autorisez-la une fois pour toutes dans les réglages du navigateur si besoin. Rendez-vous au commissariat pour votre enregistrement avant de choisir un métier. Sur téléphone : glissez un doigt et gardez-le appuyé pour vous déplacer, et tapez à deux doigts quatre fois pour entendre le guide complet des gestes.`, 'assertive');
     setTimeout(() => Game.help(), 1500);
   } catch (e) { console.error('Annonce de bienvenue en échec :', e); }
   // Intervals : protégés eux aussi, pour que gameLoop() démarre toujours ci-dessous
