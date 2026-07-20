@@ -148,6 +148,18 @@ const SpeechFix = {
     }
   },
 };
+// Détection de la plateforme : sert à proposer les bonnes commandes (gestes
+// tactiles sur téléphone, raccourcis clavier sur ordinateur).
+const Platform = (function() {
+  const ua = navigator.userAgent || '';
+  const touch = ('ontouchstart' in window) || (navigator.maxTouchPoints || 0) > 0;
+  const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1);
+  const isAndroid = /Android/i.test(ua);
+  const isMobile = isIOS || isAndroid || (touch && /Mobi|Tablet/i.test(ua));
+  const isMac = !isIOS && /Mac/i.test(navigator.platform || ua);
+  const name = isIOS ? 'iPhone' : isAndroid ? 'Android' : isMobile ? 'téléphone' : isMac ? 'Mac' : 'ordinateur';
+  return { isTouch: touch, isIOS, isAndroid, isMobile, isMac, name };
+})();
 ['touchstart', 'pointerdown', 'mousedown', 'keydown'].forEach(evt => {
   document.addEventListener(evt, () => SpeechFix.unlock(), { once: true, passive: true });
 });

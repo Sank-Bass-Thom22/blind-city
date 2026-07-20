@@ -1582,6 +1582,15 @@ function enterAccountStep(path) {
 }
 function bindStartButton() {
   autofillServerUrl();
+  // Met en avant le bon jeu de commandes selon l'appareil : gestes tactiles sur
+  // téléphone, raccourcis clavier sur ordinateur.
+  try {
+    if (typeof Platform !== 'undefined') {
+      const hm = el('helpMobile'), hd = el('helpDesktop');
+      if (Platform.isMobile) { if (hd) hd.style.display = 'none'; }
+      else { if (hm) hm.style.display = 'none'; }
+    }
+  } catch (e) { /* ignore */ }
   // Un même utilitaire pour brancher clic + tape tactile (certains navigateurs
   // mobiles avalent le "click" après un tap rapide).
   const on = (id, fn) => {
