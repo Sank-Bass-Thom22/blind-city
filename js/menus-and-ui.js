@@ -253,7 +253,8 @@ const SERVICE_TYPES = {
   magasin: 'Boutique / magasin', restaurant: 'Restaurant', garage: 'Garage / concession auto',
   banque: 'Banque', hopital: 'Hôpital', police: 'Commissariat de police',
   prison: 'Prison', immeuble: 'Immeuble (logements)',
-  tribunal: 'Cour pénale (tribunal)', monument: 'Monument de la Musique', palais: 'Palais du Naaba',
+  tribunal: 'Cour pénale (tribunal)', monument: 'Monument de la Musique',
+  gouvernorat: 'Gouvernorat', morgue: 'Morgue', cimetiere: 'Cimetière',
 };
 // Applique une modification de ville (agrandissement, quartier, service),
 // que ce soit localement (solo) ou reçue du serveur (multijoueur, pour que
