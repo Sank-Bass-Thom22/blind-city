@@ -262,6 +262,21 @@ body {
     <!-- AIDE -->
     <div class="wizard-step" id="wizStepHelp" hidden>
       <div class="wiz-step-title" tabindex="-1">❓ Commandes et gestes</div>
+      <div id="helpMobile">
+        <p style="color:var(--accent-2); font-weight:bold;">📱 Sur téléphone (lecteur d'écran désactivé une fois en jeu)</p>
+        <ul>
+          <li><strong>Se déplacer</strong> : glissez UN doigt et gardez-le appuyé — haut avancer, bas reculer, gauche et droite tourner. Un glissement rapide fait un seul pas.</li>
+          <li><strong>Un doigt, taper</strong> : 1 fois interagir · 2 fois scanner · 3 fois ma position · 4 fois freiner.</li>
+          <li><strong>Deux doigts, taper</strong> : 1 fois inventaire · 2 fois téléphone · 3 fois menu principal · 4 fois micro de proximité.</li>
+          <li><strong>Deux doigts, glisser</strong> : haut boussole · bas radar des lieux · gauche retrouver ma voiture · droite fréquence radio.</li>
+          <li><strong>Trois doigts, glisser</strong> : haut tirer · bas recharger · gauche sortir/ranger l'arme · droite coup de poing.</li>
+          <li><strong>Trois doigts, taper</strong> : 1 fois cibler le plus proche · 2 fois sirène · 3 fois menu police.</li>
+          <li><strong>Quatre doigts, glisser</strong> : haut téléphone · bas ordinateur · gauche menu véhicule · droite visite guidée.</li>
+          <li><strong>Guide vocal</strong> : tapez 4 fois à deux doigts pour réentendre tous les gestes. Dans les menus : glissez gauche/droite pour parcourir, double-tap pour valider, deux doigts vers le bas pour fermer.</li>
+        </ul>
+      </div>
+      <div id="helpDesktop">
+      <p style="color:var(--accent-2); font-weight:bold;">💻 Sur ordinateur (clavier)</p>
       <ul>
       <li><strong>Flèche haut</strong> : avancer d'un pas dans la direction où vous regardez (maintenir = avancer en continu).</li>
       <li><strong>Flèche bas</strong> : reculer d'un pas (maintenir = reculer en continu).</li>
@@ -283,13 +298,8 @@ body {
       <li><strong>Navigation non-voyants :</strong> <strong>C</strong> boussole sonore, <strong>F</strong> radar de balayage des lieux, <strong>Maj+C</strong> visite guidée de la ville, <strong>Maj+B</strong> balises sonores de proximité, <strong>Maj+G</strong> arrêter le guidage, <strong>Maj+P</strong> fouiller sa poche (choisir téléphone/tablette/ordinateur). Pour être guidé pas à pas vers un lieu : téléphone, application Lieux utiles, bouton 🚶.</li>
       <li><strong>F9</strong> à <strong>F12</strong>, <strong>Ctrl+1-9</strong>, <strong>Alt+1-9</strong>, <strong>Shift+1-9</strong> : raccourcis rapides.</li>
     </ul>
-    <p style="font-size:0.8rem; color:var(--muted);">
-      Sur téléphone, une fois dans la ville : glissez un doigt et gardez-le appuyé pour vous
-      déplacer en continu (haut avancer, bas reculer, gauche et droite tourner) ; un glissement
-      rapide fait un seul pas. Les autres commandes se font par des taps et des balayages à un,
-      deux, trois ou quatre doigts. Pour entendre le guide complet des gestes en jeu, tapez quatre
-      fois avec deux doigts. Les sons sont spatiaux : penchez la tête vers un bruit pour vous orienter.
-    </p>
+      </div>
+    <p style="font-size:0.8rem; color:var(--muted);">Les sons sont spatiaux : penchez la tête vers un bruit pour vous orienter. Le bon jeu de commandes (téléphone ou clavier) est mis en avant automatiquement selon votre appareil.</p>
       <div class="wiz-nav"><button type="button" class="back" data-wiz-back="wizStepChoice">◀ Retour à l'accueil</button></div>
     </div>
 

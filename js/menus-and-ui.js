@@ -730,11 +730,15 @@ function setupInput() {
   let gHoldDir = null, gHoldTimer = null;
   let gTapCount = 0, gTapFingers = 0, gTapTimer = null, gLastTap = 0;
   const SW = 40; // seuil de balayage en pixels
+  const TAP_WINDOW = 500; // délai (ms) avant d'exécuter un tap : laisse le temps de faire un double, triple ou quadruple tap
+  // Coupe immédiatement la voix en cours : utile quand une longue annonce (ex. le
+  // scan) doit céder la place à la nouvelle action que la personne déclenche.
+  const interruptSpeech = () => { try { if ('speechSynthesis' in window) window.speechSynthesis.cancel(); } catch (e) { /* ignore */ } const a = el('announcerPolite'); if (a) a.textContent = ''; };
 
   function gStopHold() { if (gHoldTimer) { clearInterval(gHoldTimer); gHoldTimer = null; } gHoldDir = null; }
   function gStartHold(dir) {
     if (gHoldDir === dir) return;
-    gStopHold(); gHoldDir = dir;
+    gStopHold(); gHoldDir = dir; interruptSpeech();
     const step = () => {
       if (dir === 'up') Game.moveForward();
       else if (dir === 'down') Game.moveBackward();
@@ -745,6 +749,7 @@ function setupInput() {
     gHoldTimer = setInterval(step, 300);
   }
   function gFireTap(fingers, count) {
+    interruptSpeech();
     if (fingers === 1) {
       if (count === 1) Game.interact();
       else if (count === 2) Game.scan();
@@ -765,6 +770,7 @@ function setupInput() {
     }
   }
   function gFireSwipe(fingers, dir) {
+    interruptSpeech();
     if (fingers === 2) {
       if (dir === 'up') Game.soundCompass();
       else if (dir === 'down') Game.soundRadar();
@@ -850,7 +856,7 @@ function setupInput() {
       if (gTapFingers !== fingers) { gTapFingers = fingers; gTapCount = 0; }
       gTapCount++;
       clearTimeout(gTapTimer);
-      gTapTimer = setTimeout(() => { gFireTap(gTapFingers, gTapCount); gTapCount = 0; gTapFingers = 0; }, 380);
+      gTapTimer = setTimeout(() => { gFireTap(gTapFingers, gTapCount); gTapCount = 0; gTapFingers = 0; }, TAP_WINDOW);
     }
   }, { passive: false });
 
@@ -998,7 +1004,10 @@ function startGame(seed) {
   try { announceTouchLabels(); } catch (e) { console.error('announceTouchLabels() a échoué :', e); }
   const p = Game.player;
   try {
-    announce(`Vous êtes maintenant dans Blind City. À partir de maintenant, le jeu décrit tout à voix haute : veuillez désactiver votre lecteur d'écran, VoiceOver ou NVDA, pour ne pas entendre deux voix en même temps. Bienvenue, ${p.firstName} ${p.lastName}. Pour vous repérer : appuyez sur Maj plus C pour une visite guidée de la ville, F pour balayer les lieux autour de vous, C pour la boussole, et Maj plus B pour activer les balises sonores. Les champs de texte sont maintenant lus par le jeu lui-même, caractère par caractère. Seule la fenêtre système d'autorisation du microphone reste hors du contrôle du jeu : autorisez-la une fois pour toutes dans les réglages du navigateur si besoin. Rendez-vous au commissariat pour votre enregistrement avant de choisir un métier. Sur téléphone : glissez un doigt et gardez-le appuyé pour vous déplacer, et tapez à deux doigts quatre fois pour entendre le guide complet des gestes.`, 'assertive');
+    const repere = Platform.isMobile
+      ? `Vous jouez sur ${Platform.name}. Pour vous déplacer, glissez un doigt et gardez-le appuyé : vers le haut avancer, vers le bas reculer, vers la gauche et la droite tourner. Un glissement rapide fait un seul pas. Pour vous repérer : balayez deux doigts vers le haut pour la boussole, ou deux doigts vers le bas pour le radar des lieux. Pour entendre la liste complète des gestes, tapez quatre fois avec deux doigts.`
+      : `Pour vous repérer : appuyez sur Maj plus C pour une visite guidée de la ville, F pour balayer les lieux autour de vous, C pour la boussole, et Maj plus B pour activer les balises sonores.`;
+    announce(`Vous êtes maintenant dans Blind City. À partir de maintenant, le jeu décrit tout à voix haute : veuillez désactiver votre lecteur d'écran, VoiceOver, TalkBack ou NVDA, pour ne pas entendre deux voix en même temps. Bienvenue, ${p.firstName} ${p.lastName}. ${repere} Les champs de texte sont lus par le jeu lui-même. Rendez-vous au commissariat pour votre enregistrement avant de choisir un métier.`, 'assertive');
     setTimeout(() => Game.help(), 1500);
   } catch (e) { console.error('Annonce de bienvenue en échec :', e); }
   // Intervals : protégés eux aussi, pour que gameLoop() démarre toujours ci-dessous
