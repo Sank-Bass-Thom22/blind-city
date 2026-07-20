@@ -10,6 +10,10 @@ const VEHICLE_CATALOG = {
   suv: { name: 'SUV', label: 'SUV', type: 'voiture', baseFreq: 50, mult: 40, wave: 'sawtooth', maxSpeed: 1.1, accel: 0.08, brake: 0.1, turn: 0.9, offroad: 0.75, flies: false, wheels: 4, price: 9000000, trunk: 36, seats: 5, doors: 4 },
   sahel_bf: { name: 'Sahel BF', label: 'Sahel BF', type: 'voiture', baseFreq: 46, mult: 36, wave: 'sawtooth', maxSpeed: 1.0, accel: 0.075, brake: 0.1, turn: 0.9, offroad: 0.92, flies: false, wheels: 4, price: 7500000, trunk: 45, seats: 5, doors: 4, electric: true },
   electrique: { name: 'Voiture électrique', label: 'voiture électrique', type: 'voiture', baseFreq: 42, mult: 26, wave: 'sine', maxSpeed: 1.15, accel: 0.1, brake: 0.12, turn: 0.95, offroad: 0.35, flies: false, wheels: 4, price: 14000000, trunk: 28, seats: 4, doors: 4, electric: true },
+  // Voitures de sport : vitesse et accélération élevées, tenue de route nerveuse,
+  // mais peu de coffre et chères. Vendues au concessionnaire.
+  sport_gt: { name: 'Sport GT', label: 'sport GT', type: 'voiture', baseFreq: 60, mult: 55, wave: 'sawtooth', maxSpeed: 1.7, accel: 0.14, brake: 0.15, turn: 1.05, offroad: 0.25, flies: false, wheels: 4, price: 55000000, trunk: 18, seats: 2, doors: 2, sport: true },
+  hypercar: { name: 'Hypercar', label: 'hypercar', type: 'voiture', baseFreq: 72, mult: 68, wave: 'sawtooth', maxSpeed: 2.05, accel: 0.17, brake: 0.16, turn: 1.0, offroad: 0.2, flies: false, wheels: 4, price: 130000000, trunk: 12, seats: 2, doors: 2, sport: true },
   taxi: { name: 'Taxi', label: 'taxi', type: 'voiture', baseFreq: 48, mult: 38, wave: 'sawtooth', maxSpeed: 1.0, accel: 0.07, brake: 0.1, turn: 0.95, offroad: 0.4, flies: false, wheels: 4, price: 5000000, trunk: 30, seats: 4, doors: 4 },
   police: { name: 'Voiture de police', label: 'voiture de police', type: 'voiture', baseFreq: 50, mult: 42, wave: 'sawtooth', maxSpeed: 1.35, accel: 0.1, brake: 0.13, turn: 0.95, offroad: 0.45, flies: false, wheels: 4, price: 11000000, trunk: 32, seats: 4, doors: 4 },
   moto_police: { name: 'Moto de police', label: 'moto de police', type: 'moto', baseFreq: 85, mult: 62, wave: 'square', maxSpeed: 1.55, accel: 0.12, brake: 0.13, turn: 1.15, offroad: 0.55, flies: false, wheels: 2, price: 1800000, trunk: 10, seats: 1, doors: 0, gouvernemental: true },
@@ -18,8 +22,8 @@ const VEHICLE_CATALOG = {
   // Véhicules blindés civils : vendus normalement au concessionnaire (non
   // restreints). L'armure réduit fortement les dégâts de collision — plus lents
   // et plus chers en échange. Utiles pour transporter de l'argent ou se protéger.
-  blinde_leger: { name: '4x4 blindé', label: '4x4 blindé', type: 'voiture', baseFreq: 44, mult: 34, wave: 'sawtooth', maxSpeed: 1.0, accel: 0.06, brake: 0.12, turn: 0.8, offroad: 0.85, flies: false, wheels: 4, price: 38000000, trunk: 34, seats: 5, doors: 4, armor: 0.45 },
-  blinde_lourd: { name: 'Fourgon blindé', label: 'fourgon blindé', type: 'poids lourd', baseFreq: 36, mult: 22, wave: 'sawtooth', maxSpeed: 0.8, accel: 0.04, brake: 0.13, turn: 0.6, offroad: 0.55, flies: false, wheels: 4, price: 65000000, trunk: 60, seats: 4, doors: 4, armor: 0.65 },
+  blinde_leger: { name: '4x4 blindé', label: '4x4 blindé', type: 'voiture', baseFreq: 44, mult: 34, wave: 'sawtooth', maxSpeed: 1.0, accel: 0.06, brake: 0.12, turn: 0.8, offroad: 0.85, flies: false, wheels: 4, price: 90000000, trunk: 34, seats: 5, doors: 4, armor: 0.45 },
+  blinde_lourd: { name: 'Fourgon blindé', label: 'fourgon blindé', type: 'poids lourd', baseFreq: 36, mult: 22, wave: 'sawtooth', maxSpeed: 0.8, accel: 0.04, brake: 0.13, turn: 0.6, offroad: 0.55, flies: false, wheels: 4, price: 180000000, trunk: 60, seats: 4, doors: 4, armor: 0.65 },
   // Char d'assaut : jamais vendu au concessionnaire normal. Deux voies
   // d'acquisition seulement : réquisition policière (menu police, très cher)
   // ou marché noir (offre rare, encore plus cher). Très résistant (armure),

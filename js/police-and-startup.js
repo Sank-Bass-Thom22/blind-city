@@ -562,6 +562,11 @@ Game.permanentDeath = function(cause) {
     this.inherit(this, heir);
     RPJournal.log('Décès', `${beneficiary} hérite des biens de ${this.player.firstName} ${this.player.lastName}, mort(e) définitivement (${label}).`, 'alert');
   }
+  // Le corps est transporté à la morgue, en attente d'enterrement. En
+  // multijoueur, c'est partagé sur le serveur : d'autres joueurs pourront
+  // organiser les funérailles au cimetière quand ils le décideront.
+  this.recordDeath(`${this.player.firstName} ${this.player.lastName}`, label);
+  announce(`${this.player.firstName} ${this.player.lastName} est transporté(e) à la morgue de la cité, en attente d'enterrement. Que son âme repose en paix.`, 'polite');
   localStorage.removeItem('blind_city_v18'); localStorage.removeItem('blind_city_v17'); localStorage.removeItem('city_blind_v16');
   if (Net.connected && Net.accountUsername) Net.send({ type: 'delete_own_account', username: Net.accountUsername });
   setTimeout(() => { try { location.reload(); } catch (e) {} }, 7000);

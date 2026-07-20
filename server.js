@@ -93,12 +93,19 @@ let staffData = {
     principal: process.env.STAFF_CODE_PRINCIPAL || 'changez-ce-code-principal',
     moderateur: process.env.STAFF_CODE_MODERATEUR || 'changez-ce-code-moderateur',
   },
-  bans: [], cityEdits: [], worldEdits: [],
+  bans: [], cityEdits: [], worldEdits: [], morgue: [], graves: [],
 };
+// Garantit que toutes les listes attendues existent (compatibilité avec un
+// ancien fichier ou enregistrement Supabase créé avant morgue/graves).
+function ensureStaffArrays() {
+  for (const k of ['bans', 'cityEdits', 'worldEdits', 'morgue', 'graves']) {
+    if (!Array.isArray(staffData[k])) staffData[k] = [];
+  }
+}
 try {
   const raw = fs.readFileSync(STAFF_FILE, 'utf8');
   const loaded = JSON.parse(raw);
-  if (loaded && loaded.codes) { staffData = loaded; if (!Array.isArray(staffData.cityEdits)) staffData.cityEdits = []; if (!Array.isArray(staffData.bans)) staffData.bans = []; if (!Array.isArray(staffData.worldEdits)) staffData.worldEdits = []; }
+  if (loaded && loaded.codes) { staffData = loaded; ensureStaffArrays(); }
 } catch (e) { /* fichier absent au premier démarrage : on garde les valeurs par défaut ci-dessus */ }
 function saveStaffData() {
   // En mode Supabase, on n'écrit que si le chargement initial a réussi
@@ -520,6 +527,33 @@ wss.on('connection', (ws, req) => {
       broadcast({ type: 'news_published', article });
     }
 
+    // Décès officiel d'un joueur : son corps est déposé à la morgue, en attente
+    // d'enterrement. Partagé à tous et persisté (le joueur mort a quitté le jeu).
+    else if (msg.type === 'death_notice') {
+      const entry = { name: safeName(msg.name, 'Inconnu', 60), cause: safeName(msg.cause, '', 80), time: Date.now() };
+      staffData.morgue.push(entry);
+      if (staffData.morgue.length > 200) staffData.morgue.splice(0, staffData.morgue.length - 200);
+      saveStaffData();
+      broadcast({ type: 'death_state', morgue: staffData.morgue, graves: staffData.graves });
+      broadcastStaffLog(`Décès officiel : ${entry.name} déposé(e) à la morgue (${entry.cause}).`);
+    }
+
+    // Enterrement : un joueur décide d'enterrer un défunt de la morgue. On le
+    // déplace de la morgue vers le cimetière (tombes), partagé à tous.
+    else if (msg.type === 'bury') {
+      const name = safeName(msg.name, '', 60);
+      const idx = staffData.morgue.findIndex(m => m.name === name);
+      if (idx >= 0) {
+        const entry = staffData.morgue.splice(idx, 1)[0];
+        entry.buriedTime = Date.now();
+        staffData.graves.push(entry);
+        if (staffData.graves.length > 500) staffData.graves.splice(0, staffData.graves.length - 500);
+        saveStaffData();
+        broadcast({ type: 'death_state', morgue: staffData.morgue, graves: staffData.graves });
+        broadcastStaffLog(`${player.firstName} ${player.lastName} a organisé l'enterrement de ${entry.name}.`);
+      }
+    }
+
     else if (msg.type === 'send_invoice') {
       const target = players.get(msg.targetId);
       if (!target) return;
@@ -576,6 +610,8 @@ wss.on('connection', (ws, req) => {
         players: Array.from(players.values()).filter(p => p.id !== id && p.joined).map(publicState),
         cityEdits: staffData.cityEdits || [],
         worldEdits: staffData.worldEdits || [],
+        morgue: staffData.morgue || [],
+        graves: staffData.graves || [],
         news: newsArticles,
       });
       broadcast({ type: 'player_joined', id, name: `${player.firstName} ${player.lastName}` }, id);
@@ -924,9 +960,7 @@ async function loadFromSupabase() {
     const st = await supabaseLoad('staff');
     if (st && st.codes) {
       staffData = st;
-      if (!Array.isArray(staffData.bans)) staffData.bans = [];
-      if (!Array.isArray(staffData.cityEdits)) staffData.cityEdits = [];
-      if (!Array.isArray(staffData.worldEdits)) staffData.worldEdits = [];
+      ensureStaffArrays();
     } else {
       // Tout premier démarrage : on transfère les codes/données du fichier vers Supabase.
       await supabaseSave('staff', staffData);

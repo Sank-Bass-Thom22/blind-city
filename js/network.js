@@ -42,6 +42,8 @@ const Net = {
         this.pendingCityEdits = msg.cityEdits || [];
         this.pendingWorldEdits = msg.worldEdits || [];
         Game.newsArticles = msg.news || [];
+        City.morgue = msg.morgue || [];
+        City.graves = msg.graves || [];
         const displayId = msg.id.replace(/^p/, '');
         setTimeout(() => announce(`Votre identifiant de connexion est le ${displayId}. Communiquez-le à votre équipe pour les missions à IDs. Il change à chaque reconnexion.`, 'polite'), 4000);
         onReady(msg.seed);
@@ -96,6 +98,10 @@ const Net = {
       updateHud();
     } else if (msg.type === 'crime_alert') {
       Game.onCrimeAlert(msg.kind, msg.detail, msg.x, msg.y);
+    } else if (msg.type === 'death_state') {
+      // Liste partagée des défunts : à la morgue (en attente) et enterrés.
+      City.morgue = msg.morgue || [];
+      City.graves = msg.graves || [];
     } else if (msg.type === 'ticket_received') {
       Game.tickets.push({ id: 'pv_' + Date.now(), amount: msg.amount, reason: msg.reason, time: Date.now(), from: msg.byName });
       announce(`${msg.byName} vous donne un PV pour ${msg.reason}. Montant : ${UTIL.formatMoney(msg.amount)}. Payez-le avec Ctrl+P.`, 'assertive');

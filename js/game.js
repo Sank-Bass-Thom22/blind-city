@@ -1270,7 +1270,9 @@ const Game = {
     else if (poi.type === 'ecole_pilotage') { this.openFlightSchool(); }
     else if (poi.type === 'tribunal') { this.openCourtHouse(); }
     else if (poi.type === 'monument') { this.openMusicMonument(); }
-    else if (poi.type === 'palais') { this.openNaabaPalace(); }
+    else if (poi.type === 'gouvernorat') { this.openGovernorate(); }
+    else if (poi.type === 'morgue') { this.openMorgue(); }
+    else if (poi.type === 'cimetiere') { this.openCemetery(); }
     else { announce(`Vous entrez dans ${poi.name}. ${poi.floors > 1 ? 'Bâtiment de ' + poi.floors + ' étages.' : ''}`, 'polite'); }
   },
   // --- Cour Pénale : régulariser sa situation judiciaire ---
@@ -1339,33 +1341,42 @@ const Game = {
     if (!top.length) return announce('Du sommet, la ville s\'étend autour de vous, mais aucun grand lieu n\'est identifiable d\'ici.', 'polite');
     announce(`Du sommet du Monument de la Musique, vous repérez : ${top.map(p => `${p.name}, ${p.bearing}, à ${p.dist} mètres`).join(' ; ')}.`, 'polite');
   },
-  // --- Palais du Naaba : audience (sagesse) et don à la communauté ---
-  openNaabaPalace() {
-    el('menuTitle').textContent = '👑 Palais du Naaba';
+  // --- Gouvernorat : là où travaillent le gouverneur et les membres du
+  // gouvernement. Rencontre officielle, dépôt d'une doléance, don pour la cité.
+  openGovernorate() {
+    el('menuTitle').textContent = '🏛️ Gouvernorat';
     const items = [
-      { id: 'audience', title: '🙏 Assister à une audience du Naaba', desc: 'Recevoir une parole de sagesse.' },
-      { id: 'don', title: '🎁 Faire un don à la communauté', desc: 'Offrir de l\'argent pour la cité.' },
+      { id: 'gouverneur', title: '🏛️ Rencontrer le gouverneur', desc: 'Une allocution officielle du gouvernement de la cité.' },
+      { id: 'doleance', title: '📝 Déposer une doléance', desc: 'Adresser une requête au gouvernement.' },
+      { id: 'don', title: '🎁 Faire un don pour la cité', desc: 'Soutenir les projets du gouvernement.' },
       { id: 'exit', title: '↩️ Sortir', desc: '' },
     ];
     el('menuOverlay').style.display = 'flex';
     renderMenu(items, (sel) => {
       closeMenu();
-      if (sel.id === 'audience') {
+      if (sel.id === 'gouverneur') {
         const paroles = [
-          'Le Naaba déclare : la patience est un arbre dont la racine est amère, mais dont le fruit est très doux.',
-          'Le Naaba rappelle : un seul bracelet ne fait pas de bruit ; c\'est l\'union qui rend la cité forte.',
-          'Le Naaba enseigne : celui qui pose des questions ne se perd jamais en chemin.',
-          'Le Naaba proclame : la parole donnée est une dette d\'honneur.',
-          'Le Naaba bénit ses habitants : que la paix et la prospérité règnent sur la cité.',
+          'Le gouverneur déclare : la cité avance quand chaque habitant respecte la loi et son prochain.',
+          'Le gouvernement rappelle : sécurité, travail et solidarité sont les priorités de la cité.',
+          'Le gouverneur vous souhaite la bienvenue au Gouvernorat, siège du pouvoir de la cité.',
+          'Le gouvernement annonce de nouveaux projets pour les quartiers : routes, écoles et santé.',
+          'Le gouverneur remercie les citoyens qui font vivre l\'économie et la paix de la cité.',
         ];
         announce(UTIL.pick(paroles), 'polite');
+      } else if (sel.id === 'doleance') {
+        if (typeof AccessibleTextPrompt === 'undefined') return announce('Dépôt de doléance indisponible pour l\'instant.', 'assertive');
+        AccessibleTextPrompt.open('Doléance au gouvernement', 'Écrivez votre requête ou plainte adressée au gouvernement.', '', (texte) => {
+          if (!texte || !texte.trim()) return;
+          announce('Votre doléance a été enregistrée par le Gouvernorat. Le gouvernement l\'examinera.', 'assertive');
+          if (typeof RPJournal !== 'undefined' && RPJournal.log) RPJournal.log('Gouvernorat', `Doléance déposée : ${texte.trim().slice(0, 120)}`, 'info');
+        });
       } else if (sel.id === 'don') {
-        this.openNaabaDonation();
+        this.openCityDonation();
       }
     });
   },
-  openNaabaDonation() {
-    el('menuTitle').textContent = '🎁 Don à la communauté';
+  openCityDonation() {
+    el('menuTitle').textContent = '🎁 Don pour la cité';
     const montants = [50000, 250000, 1000000];
     const items = montants.map(m => ({ id: String(m), title: UTIL.formatMoney(m), desc: '' }));
     items.push({ id: 'exit', title: '↩️ Annuler', desc: '' });
@@ -1376,8 +1387,75 @@ const Game = {
       const m = parseInt(sel.id, 10);
       if (this.money < m) return announce('Fonds insuffisants pour ce don.', 'assertive');
       this.money -= m; Audio.cash();
-      announce(`Le Naaba vous remercie pour votre don de ${UTIL.formatMoney(m)} à la communauté. Votre générosité est reconnue dans toute la cité.`, 'assertive');
+      announce(`Le gouvernement vous remercie pour votre don de ${UTIL.formatMoney(m)} en faveur de la cité. Votre générosité est reconnue.`, 'assertive');
       updateHud();
+    });
+  },
+  // --- Décès & enterrement (morgue → cimetière) ---
+  // Au décès officiel, le corps est déposé à la morgue. En multijoueur, la liste
+  // est partagée par le serveur (le joueur mort a quitté le jeu) ; en solo, elle
+  // reste locale. Depuis le cimetière, un joueur décide quand enterrer un défunt.
+  recordDeath(name, cause) {
+    if (Net.connected) { Net.send({ type: 'death_notice', name, cause: cause || '' }); }
+    else { City.morgue = City.morgue || []; City.morgue.push({ name, cause: cause || '', time: Date.now() }); }
+  },
+  buryDeceased(name) {
+    if (Net.connected) { Net.send({ type: 'bury', name }); }
+    else {
+      City.morgue = City.morgue || []; City.graves = City.graves || [];
+      const idx = City.morgue.findIndex(m => m.name === name);
+      if (idx >= 0) { const e = City.morgue.splice(idx, 1)[0]; e.buriedTime = Date.now(); City.graves.push(e); }
+    }
+  },
+  // Morgue : consulter les défunts en attente d'enterrement.
+  openMorgue() {
+    const morgue = City.morgue || [];
+    el('menuTitle').textContent = '🏥 Morgue';
+    const items = [];
+    if (!morgue.length) items.push({ id: 'empty', title: 'Aucun défunt à la morgue', desc: 'Personne n\'attend d\'enterrement pour l\'instant.' });
+    else morgue.forEach((m, i) => items.push({ id: 'm' + i, title: `⚰️ ${m.name}`, desc: `En attente d'enterrement.${m.cause ? ' Cause : ' + m.cause + '.' : ''} Allez au cimetière pour l'enterrer.` }));
+    items.push({ id: 'exit', title: '↩️ Sortir', desc: '' });
+    el('menuOverlay').style.display = 'flex';
+    renderMenu(items, () => { closeMenu(); });
+  },
+  // Cimetière : organiser l'enterrement d'un défunt de la morgue, se recueillir,
+  // ou consulter le registre des personnes déjà enterrées.
+  openCemetery() {
+    el('menuTitle').textContent = '⚰️ Cimetière';
+    const morgue = City.morgue || [];
+    const graves = City.graves || [];
+    const items = [
+      { id: 'bury', title: `⚰️ Organiser un enterrement (${morgue.length} en attente)`, desc: 'Enterrer un défunt actuellement à la morgue.' },
+      { id: 'respect', title: '🕯️ Se recueillir', desc: 'Un moment de recueillement.' },
+      { id: 'registre', title: `📜 Registre des défunts (${graves.length})`, desc: 'Les personnes enterrées ici.' },
+      { id: 'exit', title: '↩️ Sortir', desc: '' },
+    ];
+    el('menuOverlay').style.display = 'flex';
+    renderMenu(items, (sel) => {
+      closeMenu();
+      if (sel.id === 'bury') this.openBurialMenu();
+      else if (sel.id === 'respect') announce('Vous vous recueillez un instant. Le silence règne au cimetière, seul le vent murmure entre les stèles.', 'polite');
+      else if (sel.id === 'registre') {
+        if (!graves.length) return announce('Le registre des défunts est vide pour le moment.', 'polite');
+        announce(`Reposent au cimetière : ${graves.slice(-10).map(g => g.name).join(', ')}.`, 'polite');
+      }
+    });
+  },
+  openBurialMenu() {
+    const morgue = City.morgue || [];
+    if (!morgue.length) return announce('Aucun défunt à la morgue : personne à enterrer pour le moment.', 'polite');
+    el('menuTitle').textContent = '⚰️ Choisir un défunt à enterrer';
+    const items = morgue.map((m, i) => ({ id: 'm' + i, title: m.name, desc: m.cause ? `Cause : ${m.cause}.` : '' }));
+    items.push({ id: 'exit', title: '↩️ Retour', desc: '' });
+    el('menuOverlay').style.display = 'flex';
+    renderMenu(items, (sel) => {
+      closeMenu();
+      if (sel.id === 'exit') return;
+      const m = (City.morgue || [])[parseInt(sel.id.replace('m', ''), 10)];
+      if (!m) return;
+      this.buryDeceased(m.name);
+      try { AudioLib.playOnce('sfx_notification', { volume: 0.5 }); } catch (e) { /* ignore */ }
+      announce(`Vous organisez l'enterrement de ${m.name}. Une cérémonie a lieu au cimetière : que son âme repose en paix. La cité lui rend hommage.`, 'assertive');
     });
   },
   enterHouse(house) {

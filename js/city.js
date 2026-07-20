@@ -10,7 +10,9 @@ const City = {
   missions: [],
   gangs: [],
   miningSites: [],
-  solidTypes: new Set(['maison','immeuble','mur','usine','entrepot','garage','police','hopital','banque','prison','mine','tour','barriere','magasin','restaurant','qg_extreme','auto_ecole','ecole_pilotage','tribunal','monument','palais']),
+  morgue: [], // défunts en attente d'enterrement : { name, cause, time }
+  graves: [], // défunts enterrés au cimetière : { name, cause, time }
+  solidTypes: new Set(['maison','immeuble','mur','usine','entrepot','garage','police','hopital','banque','prison','mine','tour','barriere','magasin','restaurant','qg_extreme','auto_ecole','ecole_pilotage','tribunal','monument','gouvernorat','cimetiere','morgue']),
 
   generate() {
     this.grid.clear(); this.pois = []; this.npcs = []; this.vehicles = []; this.roadAxes = []; this.districts = []; this.houses = []; this.missions = []; this.gangs = []; this.miningSites = []; this.groundItems = [];
@@ -203,7 +205,9 @@ const City = {
     // Lieux emblématiques de la cité.
     add('Cour Pénale', 'tribunal', 'Centre-ville', 1);
     add('Monument de la Musique', 'monument', 'Centre-ville', 1);
-    add('Palais du Naaba', 'palais', 'Centre-ville', 1);
+    add('Gouvernorat', 'gouvernorat', 'Centre-ville', 1);
+    add('Morgue', 'morgue', 'Centre-ville', 1);
+    add('Cimetière', 'cimetiere', 'Quartier sud', 1);
     // Profil de sécurité propre à chaque banque : ce n'est jamais la même
     // routine d'un braquage à l'autre. Révélé au joueur via le repérage.
     this.pois.filter(p => p.type === 'banque').forEach(p => {
