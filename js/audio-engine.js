@@ -864,11 +864,15 @@ window.AudioLib = AudioLib;
 const Weather = {
   state: 'clair', // 'clair' | 'pluie'
   tick() {
-    if (UTIL.chance(0.12)) {
-      this.state = this.state === 'clair' ? 'pluie' : 'clair';
-      announce(this.state === 'pluie' ? 'Le ciel se couvre, il commence à pleuvoir.' : 'La pluie s\'arrête, le ciel se dégage.', 'polite');
+    // Probabilités ASYMÉTRIQUES : il se met rarement à pleuvoir, et la pluie
+    // s'arrête vite. Avant, un simple basculement à 12 % faisait pleuvoir
+    // environ la moitié du temps — beaucoup trop.
+    if (this.state === 'clair') {
+      if (UTIL.chance(0.08)) { this.state = 'pluie'; announce('Le ciel se couvre, il commence à pleuvoir.', 'polite'); }
+    } else {
+      if (UTIL.chance(0.6)) { this.state = 'clair'; announce('La pluie s\'arrête, le ciel se dégage.', 'polite'); }
     }
-    if (this.state === 'pluie') AudioLib.playLoop('amb_pluie', 0.35); else AudioLib.stopLoop('amb_pluie');
+    if (this.state === 'pluie') AudioLib.playLoop('amb_pluie', 0.18); else AudioLib.stopLoop('amb_pluie');
   },
 };
 const AmbientZones = {
@@ -905,8 +909,8 @@ const AmbientZones = {
     else if (zone === 'feu') AudioLib.playLoop('amb_feu', 0.5);
     else if (zone === 'matin') { AudioLib.playLoop('amb_matin', 0.5); AudioLib.playLoop('amb_oiseaux', 0.35); }
     else if (zone === 'interieur') AudioLib.playLoop('amb_interieur_couloir', 0.5);
-    else if (zone === 'centre_route') AudioLib.playLoop('amb_centre_ville_route', 0.45);
-    else if (zone === 'ville') AudioLib.playLoop('amb_ville', 0.4);
+    else if (zone === 'centre_route') AudioLib.playLoop('amb_centre_ville_route', 0.3);
+    else if (zone === 'ville') AudioLib.playLoop('amb_ville', 0.26);
   },
 };
 window.Weather = Weather; window.AmbientZones = AmbientZones;

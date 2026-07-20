@@ -44,8 +44,34 @@ const Game = {
       if (cls && !cls.flies) AudioLib.playOnce('clignotant_voiture', { volume: 0.35 });
     }
     else this.heading = ((this.heading + delta) % 8 + 8) % 8;
-    announce(`Vous vous tournez vers le ${this.HEADING_NAMES[this.heading]}.`, 'polite');
+    // Si un guidage est actif, on redonne TOUT DE SUITE la consigne mise à jour
+    // après le virage : retour immédiat ("Tout droit" une fois aligné), pour que
+    // la personne ne sur-corrige pas faute de confirmation (c'était la cause de
+    // l'oscillation gauche/droite). Sinon, on annonce simplement le nouveau cap.
+    if (this.guidanceTarget) this.updateGuidance(true);
+    else {
+      // Après un virage : on annonce le nouveau cap ET, s'il y a un mur droit
+      // devant, on prévient tout de suite (avant de foncer dedans).
+      let msg = `Vous vous tournez vers le ${this.HEADING_NAMES[this.heading]}.`;
+      const dd = this.headingToDelta(this.heading);
+      if ((dd.dx || dd.dy) && City.isSolid(Math.round(this.x + dd.dx), Math.round(this.y + dd.dy))) msg += ' Attention, obstacle juste devant.';
+      announce(msg, 'polite');
+    }
     updateHud();
+  },
+  // Signale un obstacle DROIT DEVANT avant qu'on ne le heurte (essentiel pour
+  // naviguer sans voir). Throttlé pour ne pas répéter en boucle.
+  warnObstacleAhead() {
+    if (this.inVehicle || this.unconscious || this.guidanceTarget) return;
+    const { dx, dy } = this.headingToDelta(this.heading);
+    if (dx === 0 && dy === 0) return;
+    if (City.isSolid(Math.round(this.x + dx), Math.round(this.y + dy))) {
+      const now = Date.now();
+      if (now - (this._lastObstacleWarn || 0) > 1500) {
+        this._lastObstacleWarn = now;
+        announce('Attention, obstacle juste devant.', 'assertive');
+      }
+    }
   },
   // Se tourner DIRECTEMENT vers un cap cardinal précis en un seul appui
   // (touches ! ; , :), plutôt que de tourner pas à pas avec les flèches.
@@ -125,6 +151,7 @@ const Game = {
     if (Math.random() < 0.08) this.randomEncounters();
     this.checkEdge();
     if (this.guidanceTarget) this.updateGuidance();
+    else this.warnObstacleAhead();
     updateHud();
   },
 
