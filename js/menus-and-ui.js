@@ -39,6 +39,7 @@ function openItemActionMenu(itemId) {
   const actions = [
     { id: 'use', title: '🖐️ Utiliser / Porter', desc: 'Utiliser, porter ou consommer cet objet.' },
     { id: 'give', title: '🤝 Donner', desc: qty > 1 ? `Choisir la quantité à donner (jusqu'à ${qty}) à la cible verrouillée.` : 'Donner l\'objet à la cible verrouillée.' },
+    { id: 'sellnpc', title: '💰 Vendre à un passant', desc: 'Proposer l\'objet à un passant proche ; s\'il a le budget, il vient l\'acheter. Le prix dépend du quartier.' },
     { id: 'drop', title: '⬇️ Déposer au sol', desc: qty > 1 ? `Choisir la quantité à déposer (jusqu'à ${qty}).` : 'Déposer l\'objet au sol.' },
     { id: 'back', title: '↩️ Retour à l\'inventaire', desc: 'Revenir à la liste des objets.' },
   ];
@@ -48,6 +49,11 @@ function openItemActionMenu(itemId) {
     if (a.id === 'give') {
       if (qty > 1) QtyPicker.open(`Donner ${it.name}`, qty, (n) => { Game.giveItem(itemId, null, n); });
       else Game.giveItem(itemId, null, 1);
+      closeMenu(); return;
+    }
+    if (a.id === 'sellnpc') {
+      if (qty > 1) QtyPicker.open(`Vendre ${it.name} à un passant`, qty, (n) => { Game.sellToNPC(itemId, n); });
+      else Game.sellToNPC(itemId, 1);
       closeMenu(); return;
     }
     if (a.id === 'drop') {
@@ -706,7 +712,7 @@ function setupInput() {
     else if (key === 'arrowleft') Game.turn(-1);
     else if (key === 'arrowright') Game.turn(1);
     else if (key === ' ') { e.preventDefault(); Game.inVehicle ? Game.brakeVehicle() : Game.move(0, 1); }
-    else if (key === 'e') Game.interact();
+    else if (key === 'e' && !e.ctrlKey && !e.shiftKey && !e.altKey) Game.interact();
     else if (key === 'm') openMainMenu();
     else if (key === 'v') toggleProxVoice(); // micro de proximité : bascule, on active puis on désactive
     else if (key === 's' && !e.ctrlKey && !e.shiftKey && !e.altKey) talkieVoiceStart(); // talkie : maintenir pour parler
@@ -718,6 +724,7 @@ function setupInput() {
     else if (key === 'i') Game.announceLocation();
     else if (key === 'o') Game.openGarage();
     else if (key === 'f') Game.soundRadar();
+    else if (key === 'd') Game.pingNearestDoor(); // balise sonore de la porte la plus proche
     else if (key === 'h') Game.help();
     else if (key === 'c') Game.soundCompass();
     else if (key === 'u') { Game.toggleCuffs(); }
@@ -727,8 +734,8 @@ function setupInput() {
     // Verrouillage de cible 1 à 9. On lit e.code (Digit1.../Numpad1...) plutôt que
     // e.key : sur un clavier AZERTY, la rangée du haut sans Maj donne & é " ' ( etc.,
     // donc e.key n'était jamais "1".."9" et le ciblage ne marchait pas.
-    else if (e.code && /^(Digit|Numpad)[1-9]$/.test(e.code)) Game.target(parseInt(e.code.replace(/\D/g, ''), 10));
-    else if (['1','2','3','4','5','6','7','8','9'].includes(key)) Game.target(parseInt(key, 10));
+    else if (e.code && /^(Digit|Numpad)[1-9]$/.test(e.code) && !e.shiftKey && !e.altKey && !e.ctrlKey) Game.target(parseInt(e.code.replace(/\D/g, ''), 10));
+    else if (['1','2','3','4','5','6','7','8','9'].includes(key) && !e.shiftKey && !e.altKey && !e.ctrlKey) Game.target(parseInt(key, 10));
     else if (key === '!') Game.setHeadingDirect(0); // Nord
     else if (key === ';') Game.setHeadingDirect(2); // Est
     else if (key === ',') Game.setHeadingDirect(4); // Sud
@@ -1008,9 +1015,31 @@ function gameLoop() {
     // Auto-drive step
     if (Game.inVehicle && Game.vehicle?.auto) Game.autoDriveStep();
 
-    // Engine sound if vehicle moving
-    if (Game.inVehicle && Game.vehicle && Math.abs(Game.vehicle.speed) > 0) {
-      Audio.playEngine(VEHICLE_CATALOG[Game.vehicle.type], Math.abs(Game.vehicle.speed) / VEHICLE_CATALOG[Game.vehicle.type].maxSpeed);
+    // Son de conduite : le vélo a son propre système de boucles (pédalage /
+    // roue libre), les autres véhicules gardent le moteur de synthèse.
+    const _cls = (Game.inVehicle && Game.vehicle) ? VEHICLE_CATALOG[Game.vehicle.type] : null;
+    if (_cls && _cls.human) {
+      Game.updateBikeAudio();
+    } else {
+      Game.stopBikeAudio(); // au cas où on vient de descendre du vélo
+      if (Game.inVehicle && Game.vehicle && Math.abs(Game.vehicle.speed) > 0) {
+        Audio.playEngine(_cls, Math.abs(Game.vehicle.speed) / _cls.maxSpeed);
+      }
+    }
+
+    // Sons partagés en réseau : moteur (quand on roule) et sirène (si active),
+    // émis à intervalle régulier pour que les joueurs proches les entendent,
+    // spatialisés selon notre position (voir Game.playRemoteSound).
+    if (Net.connected && Game.inVehicle && Game.vehicle) {
+      const nowS = Date.now();
+      if (Math.abs(Game.vehicle.speed) > 0 && nowS - (Game._lastEngineEmit || 0) > 400) {
+        Net.emitSound('synth:engine', { vol: 0.5 });
+        Game._lastEngineEmit = nowS;
+      }
+      if (Game.vehicle.siren && nowS - (Game._lastSirenEmit || 0) > 850) {
+        Net.emitSound('synth:siren', { vol: 0.7 });
+        Game._lastSirenEmit = nowS;
+      }
     }
 
     // Véhicule immobile en pleine route = circulation bloquée : au bout de
@@ -1040,6 +1069,9 @@ function gameLoop() {
 
     // Mission proximity check
     if (Game.activeMission) Game.checkMission();
+
+    // Chien guide : suivi, guidage à la laisse, besoins (faim/soif/fatigue).
+    if (typeof GuideDog !== 'undefined') GuideDog.tick();
   } catch (e) {
     // Une erreur ponctuelle ici ne doit jamais arrêter toute la boucle de jeu
     // (sons d'ambiance, moteur, police, missions) pour le reste de la session.

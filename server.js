@@ -92,6 +92,36 @@ const AUTH_CODES = {
   principal: process.env.STAFF_CODE_PRINCIPAL || 'admin200016',
   moderateur: process.env.STAFF_CODE_MODERATEUR || 'Admin002061',
 };
+// Comptes PROPRIÉTAIRES : reçoivent automatiquement l'accès administrateur
+// principal à la connexion, SANS avoir à saisir de code. On reconnaît un
+// propriétaire à son identifiant de compte (username, en minuscules) OU à son
+// nom de personnage « prénom nom » (réel, saisi à l'inscription). Configurable
+// via la variable d'environnement OWNER_ACCOUNTS (liste séparée par des
+// virgules). Voir aussi js/owner-access.js côté client.
+// Par défaut, on reconnaît l'email du propriétaire sous toutes ses formes :
+// complet, sans caractères spéciaux (forme stockée par le jeu à l'inscription),
+// et abrégé. Surchargeable via la variable d'environnement OWNER_ACCOUNTS.
+const OWNER_ACCOUNTS = (process.env.OWNER_ACCOUNTS || 'ffilwend@gmail.com,ffilwendgmailcom,ffilwend')
+  .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+const OWNER_ACCOUNTS_STRIPPED = OWNER_ACCOUNTS.map(s => s.replace(/[^a-z0-9]/g, ''));
+function isOwnerAccount(username, account) {
+  const u = String(username || '').toLowerCase();
+  const us = u.replace(/[^a-z0-9]/g, '');
+  if (u && (OWNER_ACCOUNTS.includes(u) || (us && OWNER_ACCOUNTS_STRIPPED.includes(us)))) return true;
+  if (account && account.realFirstName && account.realLastName) {
+    const fullName = `${account.realFirstName} ${account.realLastName}`.toLowerCase().trim();
+    const fullStripped = fullName.replace(/[^a-z0-9]/g, '');
+    if (OWNER_ACCOUNTS.includes(fullName) || OWNER_ACCOUNTS_STRIPPED.includes(fullStripped)) return true;
+  }
+  return false;
+}
+// Accorde l'accès principal automatiquement à un propriétaire connecté.
+function grantOwnerStaffIfEligible(ws, player, username, account) {
+  if (!isOwnerAccount(username, account)) return;
+  player.staffRole = 'principal';
+  send(ws, { type: 'staff_auth_result', ok: true, staffRole: 'principal', auto: true });
+  console.log(`[staff] Accès administrateur principal accordé automatiquement au propriétaire : ${username}`);
+}
 // Réimpose les codes autoritaires par-dessus tout état chargé (fichier/Supabase).
 function enforceAuthCodes() {
   if (!staffData.codes) staffData.codes = {};
@@ -146,6 +176,7 @@ function hashPassword(password, salt) {
 const PORT = process.env.PORT || 3000;
 const WORLD_SEED = Math.floor(Math.random() * 2147483647); // même ville pour tout le monde, tant que le serveur tourne
 const CHAT_RADIUS = 15;      // distance (en cases) pour s'entendre parler en RP "de vive voix"
+const SOUND_RADIUS = 30;     // distance (en cases, ~120 m) pour entendre les sons du monde d'un autre joueur
 const FREQ_TOLERANCE = 0.05; // tolérance de fréquence pour le talkie-walkie (en MHz)
 const WORLD_TICK_MS = 250;   // fréquence de diffusion des positions (~4 fois par seconde)
 
@@ -334,6 +365,7 @@ wss.on('connection', (ws, req) => {
         player.accountUsername = username;
         send(ws, { type: 'register_result', ok: true, username });
         console.log(`[compte] Nouveau compte créé et approuvé automatiquement : ${username} (score RP ${rpScore}/5)`);
+        grantOwnerStaffIfEligible(ws, player, username, accountsData.accounts[username]);
       }
     }
 
@@ -352,6 +384,7 @@ wss.on('connection', (ws, req) => {
       player.accountUsername = username;
       send(ws, { type: 'login_result', ok: true, username, saveData: account.saveData || null });
       console.log(`[compte] Connexion : ${username}`);
+      grantOwnerStaffIfEligible(ws, player, username, account);
     }
 
     else if (msg.type === 'get_security_question') {
@@ -675,6 +708,23 @@ wss.on('connection', (ws, req) => {
         if (dist(player, other) <= CHAT_RADIUS) {
           send(other.ws, { type: 'chat', fromId: id, fromName: `${player.firstName} ${player.lastName}`, text });
         }
+      }
+    }
+
+    // Sons du monde (moteur, pas, tir, klaxon, sirène, portes, collisions…) :
+    // relayés aux joueurs assez proches pour les entendre, avec la position de
+    // l'émetteur pour que chaque client les spatialise. Volontairement léger :
+    // on ne transporte qu'une clé de son et quelques paramètres numériques.
+    else if (msg.type === 'world_sound') {
+      const key = safeName(msg.key, '', 48);
+      if (!key) return;
+      const payload = {
+        type: 'world_sound', key, x: player.x, y: player.y, fromId: id,
+        vol: typeof msg.vol === 'number' ? Math.max(0, Math.min(1, msg.vol)) : 0.5,
+      };
+      for (const other of players.values()) {
+        if (other.id === id || !other.joined) continue;
+        if (dist(player, other) <= SOUND_RADIUS) send(other.ws, payload);
       }
     }
 

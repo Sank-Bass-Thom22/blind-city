@@ -131,6 +131,7 @@ const Audio = {
     const group = FOOTSTEP_GROUPS[surface] || FOOTSTEP_GROUPS.concrete;
     const key = UTIL.pick(group);
     AudioLib.playOnce(key, { volume: 0.5 });
+    return key; // permet de relayer le même pas aux autres joueurs (audio partagé)
   },
   screech(pan = 0) { this.noise({ duration: 0.25, gain: 0.22, pan, filterFreq: 2500, attack: 0.01, release: 0.2 }); },
   siren(vol = 1) {
@@ -351,6 +352,20 @@ const SOUND_FILES = {
   veh1_ouverture_porte: 'sounds/veh1_ouverture_porte.mp3',
   veh1_verrouillage: 'sounds/veh1_verrouillage.mp3',
   sfx_porte_vehicule: 'sounds/sfx_porte_vehicule.wav', // signal des portières (choix de portière, balise de porte)
+  // Chien guide (labrador) : aboiements de 1 à 5 fois selon l'intensité.
+  chien_aboie_court: 'sounds/chien_aboie_court.wav', // repère de position discret
+  chien_aboie_1: 'sounds/chien_aboie_1.wav',
+  chien_aboie_2: 'sounds/chien_aboie_2.wav',
+  chien_aboie_3: 'sounds/chien_aboie_3.wav',
+  chien_aboie_5: 'sounds/chien_aboie_5.wav',       // alerte de danger
+  chien_laisse: 'sounds/chien_laisse.wav',         // laisse tendue (boucle tant qu'on la tient)
+  // Vélo : vrai système sonore (pédalage, roue libre, freins, clochette).
+  velo_pedale: 'sounds/velo_pedale.wav',           // pédalage (boucle quand on avance)
+  velo_point_mort: 'sounds/velo_point_mort.wav',   // roue libre (boucle quand on ralentit sans pédaler)
+  velo_frein_1: 'sounds/velo_frein_1.wav',
+  velo_frein_2: 'sounds/velo_frein_2.wav',
+  velo_frein_3: 'sounds/velo_frein_3.wav',
+  velo_clochette: 'sounds/velo_clochette.wav',     // sonnette d'avertissement
   // Sons annexes indépendants (pas encore intégrés à un système précis —
   // disponibles pour la suite : frein à main, ceinture, klaxon, essuie-glace,
   // clignotant, passage d'un véhicule/avion à l'extérieur).

@@ -1,5 +1,5 @@
 const Game = {
-  x: 120, y: 120, altitude: 0, heading: 0, health: 100, maxHealth: 100,
+  x: 120, y: 120, altitude: 0, floor: 0, heading: 0, health: 100, maxHealth: 100,
   money: 100000, bank: 0, dirtyMoney: 0, handsUp: false, hunger: 50, thirst: 50, energy: 100,
   inVehicle: false, vehicle: null, ownedVehicles: [],
   inventory: [], backpack: false, belt: false, holster: null,
@@ -138,6 +138,7 @@ const Game = {
     }
     if (City.isSolid(nx, ny)) {
       Audio.impact(UTIL.clamp(dx, -1, 1) * 0.5);
+      if (Net.connected) Net.emitSound('synth:impact', { vol: 0.5 });
       announce('Obstacle, vous n\'avancez pas. ' + City.getTile(nx, ny), 'assertive');
       return;
     }
@@ -154,7 +155,12 @@ const Game = {
       AudioLib.stopLoop('eau_mer_amb');
       if (this.underwater) { this.underwater = false; AudioLib.stopLoop('eau_nage_sous'); }
     }
-    if (!(surface === 'water' && this.underwater)) Audio.footstep(surface);
+    this._syncFloorOnMove();
+    if (!(surface === 'water' && this.underwater)) {
+      const stepKey = Audio.footstep(surface);
+      // Pas audibles par les joueurs proches (spatialisés chez eux).
+      if (Net.connected && stepKey) Net.emitSound(stepKey, { vol: 0.35 });
+    }
     // En déplacement continu (touche maintenue), annoncer "vous avancez" à chaque
     // pas ferait annuler la synthèse vocale avant qu'elle n'ait eu le temps de
     // sortir un seul mot (nouvelle annonce = coupe la précédente). On espace donc
@@ -257,8 +263,47 @@ const Game = {
     // sport ; les autres moteurs (véhicule2, électrique, aérien) se
     // contentent d'un ralentissement de régime, déjà audible au prochain pas.
     if (speedRatioBefore > 0.2 && cls.sport) RealEngine.brake(speedRatioBefore);
+    // Vélo : vrai son de frein (une variante au hasard), throttlé pour ne pas
+    // se répéter en boucle si l'on maintient le frein.
+    if (cls.human && speedRatioBefore > 0.05 && Date.now() - (this._lastBikeBrake || 0) > 500) {
+      this._lastBikeBrake = Date.now();
+      AudioLib.playOnce(UTIL.pick(['velo_frein_1', 'velo_frein_2', 'velo_frein_3']), { volume: 0.5 });
+    }
     if (Math.abs(v.speed) < 0.05) v.speed = 0;
     updateHud();
+  },
+
+  // Système sonore du vrai vélo : tant qu'on PÉDALE (touche avancer, ou
+  // pédalage automatique), le son de pédalage tourne en boucle ; dès qu'on
+  // arrête de pédaler mais que le vélo roule encore (roue libre), le son de
+  // « point mort » prend le relais en ralentissant ; à l'arrêt, tout se coupe.
+  // Le volume suit la vitesse. Frein et clochette sont des sons ponctuels.
+  updateBikeAudio() {
+    if (!window.AudioLib) return;
+    const v = this.vehicle;
+    if (!this.inVehicle || !v) { AudioLib.stopLoop('velo_pedale'); AudioLib.stopLoop('velo_point_mort'); return; }
+    const cls = VEHICLE_CATALOG[v.type];
+    const speed = Math.abs(v.speed || 0);
+    const maxS = (cls && cls.maxSpeed) || 1;
+    if (speed < 0.02) { AudioLib.stopLoop('velo_pedale'); AudioLib.stopLoop('velo_point_mort'); return; }
+    // Pédale-t-on ? En conduite manuelle : la flèche avancer est enfoncée.
+    // En pédalage automatique : oui tant que le vélo avance.
+    const pedaling = v.auto ? true : this.keys.has('arrowup');
+    const vol = 0.3 + 0.45 * Math.min(1, speed / maxS);
+    if (pedaling) {
+      AudioLib.playLoop('velo_pedale', vol);
+      AudioLib.stopLoop('velo_point_mort');
+    } else {
+      // Roue libre : le son de point mort prend le relais, un peu plus doux.
+      AudioLib.playLoop('velo_point_mort', vol * 0.85);
+      AudioLib.stopLoop('velo_pedale');
+    }
+  },
+  // Coupe tous les sons du vélo (descente, changement de véhicule).
+  stopBikeAudio() {
+    if (!window.AudioLib) return;
+    AudioLib.stopLoop('velo_pedale');
+    AudioLib.stopLoop('velo_point_mort');
   },
 
   // Auto-drive (accessible menu + realistic route following)
@@ -374,6 +419,10 @@ const Game = {
       const driver = this.getNearbyRemoteDriver();
       const v = City.vehicles.filter(vv => UTIL.dist(vv, this) < 4).sort((a, b) => UTIL.dist(a, this) - UTIL.dist(b, this))[0];
       if (!v && !driver) { updateHud(); return announce('Aucun véhicule à proximité.', 'assertive'); }
+      // Vélo / véhicule à une seule place sans portières : pas de menu de
+      // portières (une seule place). On monte directement pour l'utiliser.
+      const vcls = v ? VEHICLE_CATALOG[v.type] : null;
+      if (v && !driver && (vcls?.doors === 0 || vcls?.seats <= 1)) return this.enterAsDriver(v);
       this.openVehicleDoorMenu(v, driver);
     }
     updateHud();
@@ -412,14 +461,17 @@ const Game = {
       return;
     }
     const cls = VEHICLE_CATALOG[v.type];
-    // Le permis est exigé pour conduire — mais pas pour un véhicule-école.
-    if (!v.examVehicle && !this.checkLicense(cls?.flies ? 'flying' : 'driving')) return;
+    // Le permis est exigé pour conduire — mais pas pour un véhicule-école, ni
+    // pour un vélo ou tout véhicule à propulsion humaine (cls.noLicense).
+    if (!v.examVehicle && !cls?.noLicense && !this.checkLicense(cls?.flies ? 'flying' : 'driving')) return;
     if (cls && !cls.flies) {
       AudioLib.playOnce('veh1_ouverture_porte', { volume: 0.6 });
+      if (Net.connected) Net.emitSound('veh1_ouverture_porte', { vol: 0.5 }); // porte audible par les joueurs proches
       setTimeout(() => { AudioLib.playOnce('veh1_fermeture_porte', { volume: 0.6 }); AudioLib.playOnce('veh_ceinture_in', { volume: 0.6 }); }, 350);
     }
-    this.vehicle = v; this.inVehicle = true; this.altitude = v.altitude || 0;
-    announce(`Vous montez au volant de ${v.name}. Flèches pour conduire, espace pour freiner, M pour conduite auto.`, 'assertive');
+    this.vehicle = v; this.inVehicle = true; this.altitude = v.altitude || 0; this.floor = 0;
+    if (cls?.human || cls?.doors === 0) announce(`Vous enfourchez ${v.name}. Flèches pour pédaler et tourner, espace pour freiner.`, 'assertive');
+    else announce(`Vous montez au volant de ${v.name}. Flèches pour conduire, espace pour freiner, M pour conduite auto.`, 'assertive');
     if (this.activeMission && this.activeMission.type === 'convoyage' && this.activeMission.vehicleId === v.id && !this.deliveryState) this.startVehicleDelivery(this.activeMission);
     updateHud();
   },
@@ -513,6 +565,20 @@ const Game = {
   useItem(id) {
     const it = this.inventory.find(i => i.id === id);
     if (!it) return;
+    if (it.category === 'stupefiant') {
+      // Consommer un stupéfiant : effet passager (énergie/euphorie/calme) mais
+      // ça attire l'attention de la police et ce n'est jamais bon pour la santé.
+      if (it.effect === 'energie') { this.energy = Math.min(100, this.energy + 40); }
+      else if (it.effect === 'euphorie') { this.energy = Math.min(100, this.energy + 20); this.hunger = Math.max(0, this.hunger - 15); }
+      else { this.thirst = Math.max(0, this.thirst - 10); } // 'calme'
+      this.health = Math.max(1, this.health - 5);
+      this.policeAwareness = Math.min(100, (this.policeAwareness || 0) + 10);
+      it.q--; if (it.q <= 0) this.removeItem(id, 1);
+      Audio.click();
+      announce(`Vous consommez ${it.name}. Effet ${it.effect || 'passager'}. Attention, la police veille.`, 'assertive');
+      updateHud();
+      return;
+    }
     if (it.consumable) {
       if (it.category === 'boisson') AudioLib.playOnce('eau_boire', { volume: 0.6 });
       if (it.hunger) this.hunger = Math.max(0, this.hunger - it.hunger);
@@ -568,7 +634,8 @@ const Game = {
     const street = City.isRoad(this.x, this.y) ? 'sur la route' : `près d\'un ${City.getTile(this.x, this.y)}`;
     const bearing = UTIL.cardinals[this.heading];
     const alt = this.altitude > 0 ? `, altitude ${Math.round(this.altitude)} mètres` : '';
-    announce(`Vous êtes dans ${d.name}, ${street}, cap vers le ${bearing}${alt}.`, 'polite');
+    const etage = (!this.inVehicle && this.floor > 0) ? `, étage ${this.floor}` : '';
+    announce(`Vous êtes dans ${d.name}, ${street}, cap vers le ${bearing}${etage}${alt}.`, 'polite');
   },
 
   /* ==========================================================
@@ -611,6 +678,36 @@ const Game = {
     const len = Math.hypot(dx, dy) || 1;
     const dot = (hx * dx + hy * dy) / len;
     return Math.acos(Math.max(-1, Math.min(1, dot))); // 0 = pile devant, PI = derrière
+  },
+
+  // Joue un son émis par un autre joueur (reçu du serveur), spatialisé et
+  // atténué selon la distance et sa position relative à notre cap. Sons du
+  // monde partagés : moteurs, pas, tirs, klaxon, sirène, portes, collisions.
+  playRemoteSound(msg) {
+    if (!msg || typeof msg.x !== 'number' || !msg.key) return;
+    const R = 30; // rayon audible (doit correspondre au SOUND_RADIUS serveur)
+    const d = UTIL.dist(msg, this);
+    if (d > R) return;
+    const pan = this.panForPoint(msg.x, msg.y);
+    const atten = Math.max(0, 1 - d / R);
+    const vol = Math.max(0.03, (typeof msg.vol === 'number' ? msg.vol : 0.5) * atten);
+    // Clés « synth:… » : effets synthétisés rejoués localement (mêmes sons que
+    // ceux entendus par l'émetteur), spatialisés par le pan.
+    if (msg.key.slice(0, 6) === 'synth:') {
+      const fx = msg.key.slice(6);
+      if (!window.Audio) return;
+      if (fx === 'gunshot') { Audio.gunshot('', pan); if (typeof GuideDog !== 'undefined') GuideDog.onDangerNear(msg.x, msg.y); }
+      else if (fx === 'impact') Audio.impact(pan);
+      else if (fx === 'siren') Audio.siren(vol);
+      else if (fx === 'screech') Audio.screech(pan);
+      else if (fx === 'engine') Audio.tone({ freq: 90, type: 'sawtooth', duration: 0.3, gain: vol * 0.25, pan });
+      return;
+    }
+    // Sinon : fichier audio joué de façon panoramique.
+    if (window.AudioLib) {
+      if (AudioLib.playPositional) AudioLib.playPositional(msg.key, pan, vol);
+      else if (AudioLib.playOnce) AudioLib.playOnce(msg.key, { volume: vol });
+    }
   },
 
   // Pan stéréo (-1 gauche, +1 droite) d'un point selon l'orientation du joueur.
@@ -975,6 +1072,114 @@ const Game = {
     this.savedPlaces.splice(index, 1);
     announce(`Lieu "${name}" supprimé.`, 'assertive');
   },
+  // Renommer un lieu enregistré (ex. « Ma maison 1 » -> « Chez moi »).
+  renameSavedPlace(index, newName) {
+    if (!this.savedPlaces || !this.savedPlaces[index]) return;
+    const clean = (newName || '').trim().slice(0, 40);
+    if (!clean) return announce('Il faut donner un nom au lieu.', 'assertive');
+    this.savedPlaces[index].name = clean;
+    announce(`Lieu renommé « ${clean} ».`, 'assertive');
+  },
+  // Enregistre automatiquement une propriété achetée (maison, entrepôt,
+  // boutique) dans « Mes lieux », avec un nom numéroté et renommable.
+  // On peut en posséder plusieurs : « Ma maison 1 », « Ma maison 2 »…
+  registerOwnedProperty(kind, obj) {
+    if (!obj) return;
+    this.savedPlaces = this.savedPlaces || [];
+    const base = kind === 'maison' ? 'Ma maison'
+      : kind === 'entrepôt' ? 'Mon entrepôt'
+      : kind === 'boutique' ? 'Ma boutique'
+      : 'Ma propriété';
+    const propId = 'prop_' + kind + '_' + (obj.id != null ? obj.id : (Math.round(obj.x) + '_' + Math.round(obj.y)));
+    // Déjà enregistrée ? (rachat/relance) -> on ne duplique pas.
+    if (this.savedPlaces.some(p => p.propId === propId)) return;
+    const n = this.savedPlaces.filter(p => p.name && p.name.indexOf(base) === 0).length + 1;
+    this.savedPlaces.push({
+      name: `${base} ${n}`,
+      x: obj.x, y: obj.y,
+      propId, kind,
+    });
+    announce(`Propriété ajoutée à Mes lieux : « ${base} ${n} ».`, 'polite');
+  },
+  // Balise sonore de porte : localise la porte accessible la plus proche
+  // (bâtiment ou véhicule) et la fait « sonner » avec spatialisation stéréo,
+  // puis annonce la direction et la distance en pas. Touche D.
+  pingNearestDoor() {
+    const candidates = [];
+    const R = 20; // rayon de recherche en tuiles
+    // Points d'intérêt (bâtiments) avec une porte.
+    (City.pois || []).forEach(poi => {
+      const d = UTIL.dist(poi, this);
+      if (d <= R) candidates.push({ x: poi.x, y: poi.y, name: poi.name || 'bâtiment', d });
+    });
+    // Véhicules à proximité (portières).
+    (City.vehicles || []).forEach(v => {
+      const d = UTIL.dist(v, this);
+      if (d <= R) candidates.push({ x: v.x, y: v.y, name: v.name || 'véhicule', d });
+    });
+    if (!candidates.length) {
+      return announce('Aucune porte à proximité. Rapprochez-vous d\'un bâtiment ou d\'un véhicule.', 'assertive');
+    }
+    candidates.sort((a, b) => a.d - b.d);
+    const t = candidates[0];
+    const pas = Math.max(1, Math.round(UTIL.dist(t, this) * CONFIG.METERS_PER_TILE / 0.3)); // 1 pas = 30 cm
+    // Direction relative au cap du joueur pour spatialiser + décrire.
+    const pan = this.panForPoint(t.x, t.y);         // -1 gauche … +1 droite
+    const rel = this.relativeAngle(t.x, t.y);        // 0 devant … PI derrière
+    let cote;
+    if (rel < 0.55) cote = 'droit devant';
+    else if (rel > Math.PI - 0.55) cote = 'derrière vous';
+    else cote = (pan < 0) ? 'à gauche' : 'à droite';
+    // Son de porte spatialisé (volume selon la distance).
+    const vol = Math.max(0.15, Math.min(0.9, 1 - t.d / (R + 4)));
+    if (window.AudioLib && AudioLib.playOnce) AudioLib.playOnce('sfx_porte_vehicule', { volume: vol });
+    // Bip directionnel panoramique en renfort (grave = loin, aigu = proche).
+    if (window.Audio && Audio.tone) {
+      Audio.tone({ freq: 480 + (1 - vol) * -160 + 220 * vol, type: 'triangle', duration: 0.18, gain: 0.14, pan });
+    }
+    announce(`Porte de ${t.name}, ${cote}, ${pas} pas.`, 'assertive');
+  },
+
+  // Positions surélevées (étages). On peut monter dans un bâtiment à étages
+  // pour prendre un avantage de tireur embusqué : +5 % de précision par étage
+  // gravi. On redescend automatiquement au rez-de-chaussée en quittant le
+  // bâtiment. Bornage à MAX_FLOOR_BONUS pour rester équilibré.
+  MAX_FLOOR_BONUS: 0.4, // +40 % max (au-delà du 8e étage, plus de gain)
+
+  // Bâtiment à étages sur lequel se tient le joueur (rez-de-chaussée compris).
+  getCurrentTallBuilding() {
+    let best = null, bd = 2.5;
+    (City.pois || []).forEach(p => {
+      if ((p.floors || 1) <= 1) return;
+      const d = UTIL.dist(p, this);
+      if (d < bd) { bd = d; best = p; }
+    });
+    return best;
+  },
+  // Monte (+1) ou descend (−1) d'un étage dans le bâtiment courant.
+  changeFloor(dir) {
+    if (this.inVehicle) return announce('Impossible de changer d\'étage en véhicule.', 'assertive');
+    const b = this.getCurrentTallBuilding();
+    if (!b) return announce('Vous n\'êtes pas dans un bâtiment à étages. Approchez-vous d\'un immeuble.', 'assertive');
+    const maxFloor = (b.floors || 1) - 1;
+    const nf = UTIL.clamp((this.floor || 0) + dir, 0, maxFloor);
+    if (nf === this.floor) {
+      return announce(dir > 0 ? `Dernier étage atteint : étage ${nf} sur ${maxFloor}.` : 'Vous êtes déjà au rez-de-chaussée.', 'assertive');
+    }
+    this.floor = nf;
+    // Son d'ascension/descente (aigu en montant, grave en descendant).
+    if (window.Audio && Audio.tone) Audio.tone({ freq: dir > 0 ? 660 : 330, type: 'sine', duration: 0.14, gain: 0.1, pan: 0 });
+    const bonus = Math.min(this.MAX_FLOOR_BONUS, this.floor * 0.05);
+    const etage = this.floor === 0 ? 'rez-de-chaussée' : `étage ${this.floor}`;
+    announce(`${b.name}, ${etage}${this.floor > 0 ? `, précision de tir plus ${Math.round(bonus * 100)} pour cent` : ''}.`, 'assertive');
+  },
+  // Appelé au déplacement à pied : si l'on s'éloigne du bâtiment, on redescend.
+  _syncFloorOnMove() {
+    if ((this.floor || 0) > 0 && !this.getCurrentTallBuilding()) {
+      this.floor = 0;
+      announce('Vous quittez le bâtiment. Retour au rez-de-chaussée.', 'polite');
+    }
+  },
 
   // Visite guidée vocale de la ville : structure générale, quartiers et leur
   // direction depuis la position actuelle. Relançable par une touche.
@@ -1079,14 +1284,17 @@ const Game = {
     const live = this.getLiveTarget();
     const target = live ? { ...this.lockedTarget, ...live } : null;
     const range = target ? UTIL.dist(target, this) : 0;
-    // altitude advantage
+    // Avantage de hauteur : altitude (véhicule volant) OU étage (à pied).
     const heightBonus = this.altitude > 0 ? Math.min(0.15, this.altitude * 0.01) : 0;
+    const floorBonus = (!this.inVehicle && this.floor > 0) ? Math.min(this.MAX_FLOOR_BONUS, this.floor * 0.05) : 0;
     let acc = w.accuracy;
     if (this.aimPart === 'tete') acc *= 0.75; else if (this.aimPart === 'jambes') acc *= 0.85;
     if (range > w.range) acc *= 0.3;
-    acc += heightBonus;
+    acc += heightBonus + floorBonus;
     this.ammo[w.ammoType]--;
     Audio.gunshot(w.name, 0);
+    if (Net.connected) Net.emitSound('synth:gunshot', { vol: 0.95 }); // audible par les joueurs proches
+    if (typeof GuideDog !== 'undefined') GuideDog.onDangerNear(this.x, this.y); // le chien alerte / se cache
     setTimeout(() => Audio.shellDrop(0), 150);
     if (Date.now() - (this._lastGunfireReport || 0) > 8000) {
       this._lastGunfireReport = Date.now();
@@ -1328,12 +1536,14 @@ const Game = {
     // Check NPC
     const nearby = City.npcs.filter(n => !n.dead && UTIL.dist(n, this) < 3).sort((a, b) => UTIL.dist(a, this) - UTIL.dist(b, this))[0];
     if (nearby) { this.describePerson(nearby); return this.talkTo(nearby); }
-    // Check POI
-    const poi = City.pois.find(p => UTIL.dist(p, this) < 3);
-    if (poi) return this.enterPOI(poi);
+    // Check POI. Les bâtiments sont des tuiles solides : on se tient forcément
+    // à côté, jamais dessus, donc le rayon doit être assez large (4) pour ne
+    // pas rater l'entrée quand le guidage nous dépose juste devant la porte.
+    const poi = City.pois.map(p => ({ p, d: UTIL.dist(p, this) })).filter(o => o.d < 4).sort((a, b) => a.d - b.d)[0];
+    if (poi) return this.enterPOI(poi.p);
     // Check house
-    const house = City.houses.find(h => UTIL.dist(h, this) < 3);
-    if (house) return this.enterHouse(house);
+    const house = City.houses.map(h => ({ h, d: UTIL.dist(h, this) })).filter(o => o.d < 4).sort((a, b) => a.d - b.d)[0];
+    if (house) return this.enterHouse(house.h);
     // Check vehicle
     const veh = City.vehicles.filter(v => !this.inVehicle && UTIL.dist(v, this) < 3).sort((a, b) => UTIL.dist(a, this) - UTIL.dist(b, this))[0];
     if (veh) return this.interactVehicle();
@@ -1345,7 +1555,21 @@ const Game = {
     if (gang) return this.beginGangRaid(gang);
     // Check objets au sol (ramassage, voir pickUpItems)
     if ((City.groundItems || []).some(it => UTIL.dist(it, this) < 2)) return this.pickUpItems();
-    announce('Rien à proximité. Faites un scan.', 'polite');
+    // Rien juste à portée : plutôt que de rester muet, on repère le lieu utile
+    // le plus proche (bâtiment, maison ou véhicule) dans un rayon élargi et on
+    // indique dans quelle direction avancer pour pouvoir interagir.
+    const near = [];
+    City.pois.forEach(p => near.push({ name: p.name, x: p.x, y: p.y, d: UTIL.dist(p, this) }));
+    City.houses.forEach(h => near.push({ name: h.name || 'une maison', x: h.x, y: h.y, d: UTIL.dist(h, this) }));
+    City.vehicles.forEach(v => { if (!this.inVehicle) near.push({ name: v.name, x: v.x, y: v.y, d: UTIL.dist(v, this) }); });
+    const closest = near.filter(o => o.d < 10).sort((a, b) => a.d - b.d)[0];
+    if (closest) {
+      const m = Math.round(closest.d * CONFIG.METERS_PER_TILE);
+      const dir = UTIL.bearing(closest.x - this.x, closest.y - this.y);
+      Audio.tone({ freq: 500, type: 'sine', duration: 0.12, gain: 0.08, pan: this.panForPoint(closest.x, closest.y) });
+      return announce(`${closest.name} est à ${m} mètres, vers le ${dir}. Approchez-vous encore un peu, puis appuyez de nouveau pour interagir.`, 'assertive');
+    }
+    announce('Rien à proximité. Faites un scan avec F.', 'polite');
   },
   // Enregistrer un contact sous un nom personnalisé : c'est CE nom qui sera
   // annoncé à chaque fois qu'on croise cette personne par la suite — jamais
@@ -1554,6 +1778,8 @@ const Game = {
     else if (poi.type === 'aeroport' || poi.type === 'heliport') { this.aircraftMenu(poi); }
     else if (poi.type === 'mine') { const mine = City.miningSites.find(m => m.x === poi.x && m.y === poi.y); if (mine) { if (!this.miningMachine) announce(`Site minier. Ressource : ${mine.resource}. Achetez une machine d'extraction (750 000 FCFA, touche Ctrl+M) pour un bien meilleur rendement.`, 'polite'); this.mine(mine); } }
     else if (poi.type === 'entrepot') { this.openWarehouse(poi); }
+    else if (poi.type === 'animalerie') { if (typeof GuideDog !== 'undefined') GuideDog.openPetShopMenu(); }
+    else if (poi.type === 'veterinaire') { if (typeof GuideDog !== 'undefined') GuideDog.openVetMenu(); }
     else if (poi.type === 'qg_extreme') {
       // Façon RP GTA : la police est jouée par de vrais joueurs humains, donc
       // il n'y a pas de pénalité automatique garantie. Le seul vrai risque,
@@ -1765,6 +1991,7 @@ const Game = {
         if (!confirmed) return;
         if (this.money < house.price) return announce(`Prix : ${UTIL.formatMoney(house.price)}. Trop cher.`, 'assertive');
         this.money -= house.price; this.ownedHouses.push(house.id); house.owner = 'player';
+        this.registerOwnedProperty('maison', house);
         sendWorldEdit('house_owner', { id: house.id, owner: 'player' });
         announce(`Vous achetez ${house.name} pour ${UTIL.formatMoney(house.price)}.`, 'assertive'); Audio.cash();
         announce(`Vous êtes chez vous, ${house.name}. Capacité de stockage : ${house.capacity}.`, 'polite');
@@ -1818,7 +2045,7 @@ const Game = {
   openWarehouse(poi) {
     if (!this.ownedWarehouses.includes(poi.id)) {
       const price = 500000;
-      if (this.money >= price) { this.money -= price; this.ownedWarehouses.push(poi.id); poi.owner = 'player'; Audio.cash(); announce(`Entrepôt acheté pour ${UTIL.formatMoney(price)}.`, 'assertive'); }
+      if (this.money >= price) { this.money -= price; this.ownedWarehouses.push(poi.id); poi.owner = 'player'; this.registerOwnedProperty('entrepôt', poi); Audio.cash(); announce(`Entrepôt acheté pour ${UTIL.formatMoney(price)}.`, 'assertive'); }
       else return announce(`Prix entrepôt : ${UTIL.formatMoney(price)}.`, 'assertive');
     }
     poi.storage = poi.storage || [];
@@ -1872,6 +2099,62 @@ const Game = {
     const price = Math.floor((it.price || 1000) * 0.6);
     this.money += price; this.removeItem(it.id, 1);
     Audio.cash(); announce(`Vous vendez ${it.name} pour ${UTIL.formatMoney(price)}.`, 'polite'); updateHud();
+  },
+
+  // Demande de revente aux passants selon le quartier : plus un quartier est
+  // commerçant et animé, plus les passants achètent cher et ont du budget.
+  // Gounghin (forte) > Cissin (moyenne) > Koulouba (faible) > Aéroport (très
+  // faible). Renvoie un multiplicateur de prix et une fourchette de budget.
+  npcDemandFactor(districtName) {
+    const name = districtName || '';
+    if (/Gounghin/i.test(name)) return { mult: 1.3, budgetMin: 20000, budgetMax: 50000, label: 'forte' };
+    if (/Cissin/i.test(name)) return { mult: 1.0, budgetMin: 12000, budgetMax: 30000, label: 'moyenne' };
+    if (/Koulouba/i.test(name)) return { mult: 0.7, budgetMin: 8000, budgetMax: 18000, label: 'faible' };
+    if (/A[ée]roport/i.test(name)) return { mult: 0.4, budgetMin: 5000, budgetMax: 12000, label: 'très faible' };
+    return { mult: 0.85, budgetMin: 8000, budgetMax: 25000, label: 'ordinaire' };
+  },
+  // Vendre un objet de l'inventaire à un passant. On cherche un civil proche,
+  // non hostile ; s'il a le budget (selon le quartier), il se dirige vers le
+  // vendeur et la vente se conclut à son arrivée (voir npcTick).
+  sellToNPC(itemId, qty = 1) {
+    const it = this.inventory.find(i => i.id === itemId) || this.inventory[0];
+    if (!it) return announce('Rien à vendre.', 'assertive');
+    qty = Math.min(Math.max(1, Math.floor(qty) || 1), it.q || 1);
+    // Acheteur : un passant civil, non hostile, vivant, non déjà occupé, proche.
+    const buyer = (City.npcs || [])
+      .filter(n => !n.dead && !n.hostile && !n.menotte && !n.knockedOut && !n.wantsToBuyItem
+        && (n.job === 'civil' || n.job === 'commercant' || n.job === 'vendeur' || n.job === 'etudiant' || n.job === 'employe' || n.job === 'retraite')
+        && UTIL.dist(n, this) < 14)
+      .sort((a, b) => UTIL.dist(a, this) - UTIL.dist(b, this))[0];
+    if (!buyer) return announce('Aucun passant intéressé à proximité. Rapprochez-vous d\'une zone animée.', 'assertive');
+    const demand = this.npcDemandFactor(City.getDistrictAt(this.x, this.y).name);
+    const price = Math.max(1, Math.floor((it.price || 1000) * demand.mult * qty));
+    // Budget du passant dans ce quartier.
+    const budget = UTIL.randInt(demand.budgetMin, demand.budgetMax);
+    if (budget < price) {
+      return announce(`${buyer.name} n'a pas les moyens : ${UTIL.formatMoney(budget)} en poche, vous demandez ${UTIL.formatMoney(price)}. La demande est ${demand.label} ici.`, 'assertive');
+    }
+    buyer.money = budget;
+    buyer.wantsToBuyItem = { itemId: it.id, qty, price, name: it.name, expires: Date.now() + 30000 };
+    // Repère sonore de l'acheteur qui approche.
+    if (window.Audio && Audio.tone) Audio.tone({ freq: 620, type: 'sine', duration: 0.12, gain: 0.1, pan: this.panForPoint(buyer.x, buyer.y) });
+    announce(`${buyer.name} est intéressé par ${it.name} pour ${UTIL.formatMoney(price)} et se dirige vers vous. Demande ${demand.label} dans ce quartier. Restez sur place.`, 'assertive');
+  },
+  // Conclut la vente quand l'acheteur arrive à portée du vendeur.
+  completeNPCSale(n) {
+    const deal = n.wantsToBuyItem;
+    if (!deal) return;
+    n.wantsToBuyItem = null;
+    const it = this.inventory.find(i => i.id === deal.itemId);
+    if (!it || (it.q || 1) < deal.qty) {
+      return announce(`${n.name} est venu acheter ${deal.name}, mais vous ne l'avez plus.`, 'polite');
+    }
+    this.money += deal.price;
+    n.money = Math.max(0, (n.money || 0) - deal.price);
+    this.removeItem(deal.itemId, deal.qty);
+    Audio.cash();
+    announce(`Vente conclue : ${deal.qty} ${deal.name} à ${n.name} pour ${UTIL.formatMoney(deal.price)}.`, 'assertive');
+    updateHud();
   },
   openVehicleShop(poi) {
     const available = Object.entries(VEHICLE_CATALOG).map(([k, v]) => ({ id: k, ...v }));
@@ -1996,20 +2279,22 @@ const Game = {
     if (typeof Phone !== 'undefined' && Phone.open) Phone.closePhone();
     el('menuOverlay').style.display = 'flex';
     el('menuTitle').textContent = 'Missions';
-    if (!active.length) { renderMenu([{ id: 'empty', title: 'Aucune mission disponible', desc: '' }], () => {}); return; }
+    if (!active.length && !this.activeMission) { renderMenu([{ id: 'empty', title: 'Aucune mission disponible', desc: '' }], () => {}); return; }
     const items = active.map((m, i) => ({ id: String(i), title: `${m.title} — ${UTIL.formatMoney(m.reward)}`, desc: `${m.desc} Danger : ${m.danger}/100.` }));
     this.missionContext = active;
-    renderMenu(items, (sel) => { closeMenu(); this.activateMission(parseInt(sel.id, 10) + 1); });
+    if (this.activeMission) items.unshift({ id: 'cancel', title: `❌ Annuler la mission en cours : ${this.activeMission.title}`, desc: 'Arrête la mission active. Aucune pénalité.' });
+    renderMenu(items, (sel) => { closeMenu(); if (sel.id === 'cancel') this.abandonMission(); else this.activateMission(parseInt(sel.id, 10) + 1); });
   },
   openExtremeMissions() {
     const active = City.missions.filter(m => (m.active || !m.completed) && m.extreme).slice(0, 12);
     if (typeof Phone !== 'undefined' && Phone.open) Phone.closePhone();
     el('menuOverlay').style.display = 'flex';
     el('menuTitle').textContent = 'Missions extrêmes';
-    if (!active.length) { renderMenu([{ id: 'empty', title: 'Aucune mission extrême disponible pour l\'instant', desc: '' }], () => {}); return; }
+    if (!active.length && !this.activeMission) { renderMenu([{ id: 'empty', title: 'Aucune mission extrême disponible pour l\'instant', desc: '' }], () => {}); return; }
     const items = active.map((m, i) => ({ id: String(i), title: `💀 ${m.title} — ${UTIL.formatMoney(m.reward)}`, desc: `${m.desc} Danger : ${m.danger}/100.` }));
     this.missionContext = active;
-    renderMenu(items, (sel) => { closeMenu(); this.activateMission(parseInt(sel.id, 10) + 1); });
+    if (this.activeMission) items.unshift({ id: 'cancel', title: `❌ Annuler la mission en cours : ${this.activeMission.title}`, desc: 'Arrête la mission active. Aucune pénalité.' });
+    renderMenu(items, (sel) => { closeMenu(); if (sel.id === 'cancel') this.abandonMission(); else this.activateMission(parseInt(sel.id, 10) + 1); });
   },
   activateMission(index) {
     const m = this.missionContext?.[index - 1]; if (!m) return;
@@ -2049,6 +2334,20 @@ const Game = {
     } else {
       announce(`Mission activée : ${m.title}. ${m.desc}. Un repérage sonore vous guidera une fois à proximité.`, 'assertive');
     }
+    updateHud();
+  },
+  // Abandonner la mission en cours à tout moment, sans pénalité (on ne touche
+  // pas la récompense puisqu'elle n'est versée qu'à la réussite).
+  abandonMission() {
+    if (!this.activeMission) return announce('Aucune mission en cours à annuler.', 'assertive');
+    const m = this.activeMission;
+    m.active = false; m.completed = false;
+    this.activeMission = null;
+    // Réinitialise tous les états d'étape éventuels pour repartir proprement.
+    this.deliveryState = null; this.taxiState = null; this.escorteState = null;
+    this.heistState = null; this.combatState = null; this.pursuitState = null;
+    if (this.guidanceTarget) this.stopGuidance();
+    announce(`Mission « ${m.title} » annulée. Vous pouvez en relancer une autre quand vous voulez.`, 'assertive');
     updateHud();
   },
   checkMission() {
@@ -3474,7 +3773,7 @@ const Game = {
     announce('Conduite automatique : dites un lieu, par exemple hôpital, police, banque, magasin, armurerie, aéroport, héliport, port, mine.', 'polite');
   },
   help() {
-    announce('Commandes : flèches pour se déplacer, E interagir, T tirer, R recharger, A arme, P téléphone, K ordinateur, B inventaire, L position, C boussole, F radar de balayage, V micro de proximité, S maintenue pour parler au talkie, Maj+C visite guidée, Maj+B balises sonores, Maj+G arrêter le guidage, Maj+P fouiller sa poche, Maj+U faire suivre une cible menottée, X coup de poing, Y porter, Shift+Z installer dans véhicule, Shift+T testament au commissariat, Ctrl+J menu véhicule, Ctrl+F fouille cible, Alt+F fouille soi, Ctrl+L verrouiller son véhicule, Ctrl+S sirène, Ctrl+M acheter une machine d\'extraction minière, Ctrl+O ma tenue, Ctrl+A mode staff, F9-F12 raccourcis, Ctrl+1-9 ciblage rapide. Dans les menus et pour choisir une quantité à donner ou déposer : flèches Haut/Bas pour ±1 ou se déplacer, Gauche/Droite pour ±5, Entrée pour valider, Échap pour annuler. Sur mobile, le même geste de glissement sert à naviguer et à ajuster une quantité, et le double-tap valide.', 'polite');
+    announce('Commandes : flèches pour se déplacer, E interagir, T tirer, R recharger, A arme, P téléphone, K ordinateur, B inventaire, L position, C boussole, F radar de balayage, D balise sonore de la porte la plus proche, Maj+E monter d\'un étage, Alt+E descendre d\'un étage, V micro de proximité, S maintenue pour parler au talkie, Maj+C visite guidée, Maj+B balises sonores, Maj+G arrêter le guidage, Maj+P fouiller sa poche, Maj+U faire suivre une cible menottée, X coup de poing, Y porter, Shift+Z installer dans véhicule, Shift+T testament au commissariat, Ctrl+J menu véhicule, Ctrl+F fouille cible, Alt+F fouille soi, Ctrl+L verrouiller son véhicule, Ctrl+S sirène, Ctrl+M acheter une machine d\'extraction minière, Ctrl+O ma tenue, Ctrl+A mode staff, F9-F12 raccourcis, Ctrl+1-9 ciblage rapide. Chien guide (Maj+Alt+chiffre) : 0 prendre ou lâcher la laisse, 1 menu du chien, 2 guider vers la destination, 3 nourrir, 4 abreuver, 5 état, 6 rappeler, 7 rester sur place, 8 envoyer au véhicule, 9 désactiver ou réactiver, Maj+Alt+F7 repos. Achat du chien et de sa nourriture à l\'animalerie, soins chez le vétérinaire. Dans les menus et pour choisir une quantité à donner ou déposer : flèches Haut/Bas pour ±1 ou se déplacer, Gauche/Droite pour ±5, Entrée pour valider, Échap pour annuler. Sur mobile, le même geste de glissement sert à naviguer et à ajuster une quantité, et le double-tap valide.', 'polite');
   },
 
   // Save / load
@@ -3495,6 +3794,7 @@ const Game = {
       rolesCurrent: Roles.current, rolesRecruiters: Roles.recruiters, savedPlaces: this.savedPlaces, ownsTablet: this.ownsTablet,
       phones: this.phones, activePhoneIndex: this.activePhoneIndex, lastParkedVehicle: this.lastParkedVehicle, theoryPassed: this.theoryPassed, flightTheoryPassed: this.flightTheoryPassed, myContacts: this.myContacts,
       hasHelmet: this.hasHelmet, hasVest: this.hasVest, pendingBills: this.pendingBills,
+      guideDog: this.guideDog, // chien guide (position, état, équipement) — coûteux, doit persister
     };
     localStorage.setItem('blind_city_v18', JSON.stringify(payload));
     // Si un compte joueur est connecté, pousse aussi la sauvegarde côté
@@ -3522,6 +3822,8 @@ const Game = {
       if (!('isPolice' in this.outfit)) this.outfit.isPolice = false;
       if (!('masque' in this.outfit)) this.outfit.masque = false;
       if (!this.talkie) this.talkie = { owned: false, battery: 1, on: false, frequency: 151.5 };
+      // Chien guide : resynchronise le module GuideDog avec l'état restauré.
+      if (typeof GuideDog !== 'undefined') GuideDog.data = (this.guideDog && this.guideDog.alive) ? this.guideDog : null;
       if (!Array.isArray(this.savedPlaces)) this.savedPlaces = [];
       if (!Array.isArray(this.myContacts)) this.myContacts = [];
       if (!Array.isArray(this.pendingBills)) this.pendingBills = [];

@@ -37,6 +37,12 @@ function setupExtraInput() {
     else if (ctrl && key === 't') { e.preventDefault(); openTalkieMenu(); }
     else if (ctrl && key === 'y') { e.preventDefault(); Game.rpTalk(); }
     else if (ctrl && key === 'e') { e.preventDefault(); Game.throwGrenade(); }
+    else if (shift && key === 'e') { e.preventDefault(); Game.changeFloor(1); }   // monter d'un étage
+    else if (alt && key === 'e') { e.preventDefault(); Game.changeFloor(-1); }     // descendre d'un étage
+    // Chien guide : Maj+Alt+chiffre (0-9) et Maj+Alt+F7 (repos). On lit e.code
+    // (Digit0..Digit9) pour rester fiable sur clavier AZERTY.
+    else if (shift && alt && e.code && /^(Digit|Numpad)[0-9]$/.test(e.code)) { e.preventDefault(); if (typeof GuideDog !== 'undefined') GuideDog.handleDigit(parseInt(e.code.replace(/\D/g, ''), 10)); }
+    else if (shift && alt && (key === 'f7' || e.code === 'F7')) { e.preventDefault(); if (typeof GuideDog !== 'undefined') GuideDog.rest(); }
     else if (ctrl && (['1','2','3','4','5','6','7','8','9'].includes(key))) { e.preventDefault(); Game.target(parseInt(key, 10)); }
     else if (alt && key === 'f') { e.preventDefault(); Game.searchSelf(); }
     else if (alt && key === 'v') { e.preventDefault(); Game.openVehicleInfo(Game.vehicle || City.vehicles.find(v => UTIL.dist(v, Game) < 4)); }
@@ -1207,11 +1213,13 @@ Game.honk = function() {
   if (!this.inVehicle || !this.vehicle) return announce('Montez dans un véhicule pour klaxonner.', 'assertive');
   const cls = VEHICLE_CATALOG[this.vehicle.type];
   let key = 'klaxon_voiture';
-  if (cls && cls.type === '2 roues') key = 'klaxon_moto';
+  if (cls && cls.human) key = 'velo_clochette'; // vélo : sonnette d'avertissement
+  else if (cls && cls.type === '2 roues') key = 'klaxon_moto';
   else if (cls && cls.type === 'poids lourd') key = 'klaxon_camion';
   else if (cls && cls.type === 'air') return announce('Pas de klaxon en vol.', 'polite');
   else if (cls && cls.price >= 8000000) key = 'klaxon_luxe'; // véhicule haut de gamme : klaxon distinctif
   AudioLib.playOnce(key);
+  if (Net.connected) Net.emitSound(key, { vol: 0.8 }); // klaxon / sonnette audible par les joueurs proches
 };
 Game.searchSelf = function() {
   if (!this.inventory.length) return announce('Vos poches sont vides.', 'polite');
@@ -1396,6 +1404,9 @@ startGame = function(seed) {
   try { setupExtraInput(); } catch (e) { console.error('setupExtraInput() a échoué :', e); }
   setInterval(npcTick, 2000);
   setInterval(() => Phone.updateClock(), 30000);
+  // Accès propriétaire : priorités totales du staff sans code, dès que
+  // l'identité (compte ou nom de personnage) est connue.
+  try { if (typeof OwnerAccess !== 'undefined') OwnerAccess.watch(); } catch (e) { console.error('OwnerAccess a échoué :', e); }
 };
 
 // Expose Phone and Computer for debugging
