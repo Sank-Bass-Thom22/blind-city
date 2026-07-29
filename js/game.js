@@ -109,6 +109,7 @@ const Game = {
     this.move(-dx, -dy, { keepHeading: true, reverse: true });
   },
   move(dx, dy, opts = {}) {
+    if (this.jailed) return announce('Vous êtes en cellule. Seul un policier peut vous libérer.', 'polite');
     if (this.interior) return this._moveInterior(dx, dy); // déplacement dans le plan intérieur
     if (this.ridingWith) return announce('Vous êtes passager. Appuyez sur Interagir pour descendre avant de marcher.', 'polite');
     if (this.inVehicle && this.vehicle) {
@@ -1394,6 +1395,14 @@ const Game = {
       const d = UTIL.dist(p, this);
       if (d < bd) { bd = d; best = p; }
     });
+    // Les maisons à étages (City.houses, séparées des POI) doivent aussi
+    // compter : sinon Shift+E répondait toujours « vous n'êtes pas dans un
+    // immeuble » chez soi dans une maison à étages.
+    (City.houses || []).forEach(h => {
+      if ((h.floors || 1) <= 1) return;
+      const d = UTIL.dist(h, this);
+      if (d < bd) { bd = d; best = h; }
+    });
     return best;
   },
   // Monte (+1) ou descend (−1) d'un étage dans le bâtiment courant.
@@ -1861,14 +1870,24 @@ const Game = {
   // déjà. Une fois dedans, on peut interagir librement avec E sans ressortir, et
   // continuer à se déplacer ; on ne ressort que par un nouveau Ctrl+Alt+E.
   toggleIndoor() {
+    if (this.jailed) return announce('Vous êtes en cellule. Seul un policier peut vous libérer.', 'assertive');
     if (this.interior) return this.exitInterior();
     if (this.inVehicle) return announce('Descendez du véhicule pour entrer dans un lieu.', 'assertive');
     if (this.indoors) {
-      const name = this.indoors.name;
-      this.indoors = null;
-      this.doorCue();
-      announce(`Vous sortez de ${name}. Vous êtes de nouveau dehors.`, 'assertive');
-      return;
+      // Si on s'est éloigné du lieu sans avoir formellement refait
+      // Ctrl+Alt+E pour en sortir (parti à pied vers un autre lieu), on
+      // considère qu'on est déjà dehors : sinon Ctrl+Alt+E annonçait
+      // toujours « vous sortez de [l'ANCIEN lieu] » au lieu de faire entrer
+      // dans le nouveau lieu où l'on se trouve réellement.
+      if (this.indoors.ref && UTIL.dist(this.indoors.ref, this) > 4) {
+        this.indoors = null;
+      } else {
+        const name = this.indoors.name;
+        this.indoors = null;
+        this.doorCue();
+        announce(`Vous sortez de ${name}. Vous êtes de nouveau dehors.`, 'assertive');
+        return;
+      }
     }
     // Chercher un lieu (bâtiment ou maison) à portée pour y entrer.
     const poi = City.pois.map(p => ({ p, d: UTIL.dist(p, this) })).filter(o => o.d < 4).sort((a, b) => a.d - b.d)[0];
@@ -1952,7 +1971,14 @@ const Game = {
     }
     it.ix = nx; it.iy = ny;
     if (window.Audio && Audio.tone) Audio.tone({ freq: 210, type: 'sine', duration: 0.05, gain: 0.045, pan: 0 });
-    if (room.name !== it.room) { it.room = room.name; announce(`Pièce : ${room.name}.`, 'polite'); }
+    if (room.name !== it.room) {
+      it.room = room.name; announce(`Pièce : ${room.name}.`, 'polite');
+      // La piscine d'une maison de standing : on peut s'y baigner (touche E,
+      // même mécanique que plonger dans l'eau en extérieur).
+      const wasInWater = this.inWater;
+      this.inWater = (room.name === 'piscine');
+      if (wasInWater && !this.inWater) this.underwater = false;
+    }
     const obj = this._objectAt(nx, ny);
     if (obj) announce(`Objet : ${obj.name}. E pour l'utiliser.`, 'polite');
     if (it.service && it.service.x === nx && it.service.y === ny) announce(`${it.service.label}. Appuyez sur E pour être servi.`, 'polite');
@@ -2014,6 +2040,7 @@ const Game = {
     const name = this.interior.name;
     this.x = this.interior.returnX; this.y = this.interior.returnY;
     this.interior = null; this.indoors = null;
+    this.inWater = City.getTile(this.x, this.y) === 'eau'; this.underwater = false; AudioLib.stopLoop('eau_nage_sous');
     this.doorCue();
     announce(`Vous sortez de ${name}. Vous êtes de nouveau dehors.`, 'assertive');
     updateHud();
@@ -2028,6 +2055,10 @@ const Game = {
       if (it.service && Math.abs(it.ix - it.service.x) <= 1 && Math.abs(it.iy - it.service.y) <= 1) return this.enterPOI(it.poi);
       return announce(`Pièce : ${it.room || 'entrée'}. Allez au ${it.service ? it.service.label : 'comptoir'} pour être servi.`, 'assertive');
     }
+    // Piscine (maison de standing) : E pour se baigner directement.
+    if (it.room === 'piscine') return this.diveInWater();
+    // Jardin : E pour planter des graines, ou récolter si c'est prêt.
+    if (it.room === 'jardin') return this.tendGarden();
     // Un meuble sous les pieds OU juste à côté : on l'utilise directement.
     const obj = this._objectNear(it.ix, it.iy);
     if (obj) return this.interactFurniture(obj);
@@ -2372,6 +2403,7 @@ const Game = {
     else if (poi.type === 'aeroport' || poi.type === 'heliport') { this.aircraftMenu(poi); }
     else if (poi.type === 'mine') { const mine = City.miningSites.find(m => m.x === poi.x && m.y === poi.y); if (mine) { if (!this.miningMachine) announce(`Site minier. Ressource : ${mine.resource}. Achetez une machine d'extraction (750 000 FCFA, touche Ctrl+M) pour un bien meilleur rendement.`, 'polite'); this.mine(mine); } }
     else if (poi.type === 'entrepot') { this.openWarehouse(poi); }
+    else if (poi.type === 'garage') { this.openPublicParking(poi); }
     else if (poi.type === 'animalerie') { if (typeof GuideDog !== 'undefined') GuideDog.openPetShopMenu(); }
     else if (poi.type === 'veterinaire') { if (typeof GuideDog !== 'undefined') GuideDog.openVetMenu(); }
     else if (poi.type === 'qg_extreme') {
@@ -2629,12 +2661,27 @@ const Game = {
   bank() {
     announce(`Solde bancaire : ${UTIL.formatMoney(this.money)}. Les banques gèrent vos fonds.`, 'polite');
   },
+  // Parking public (lieu « garage » sur la carte) : vos véhicules restent
+  // toujours exactement où vous les laissez (aucun besoin d'un endroit
+  // précis pour ça) — ce lieu sert surtout de repère RP dans la ville, et
+  // rappelle qu'on peut faire venir un véhicule possédé n'importe où via
+  // Garage sur le téléphone (touche O), y compris chez soi.
+  openPublicParking(poi) {
+    if (this.inVehicle && this.vehicle) {
+      announce(`Parking public : ${poi.name}. ${this.vehicle.name} peut rester garé ici en toute sécurité — descendez puis rappelez-le n'importe où plus tard via Garage sur votre téléphone (touche O).`, 'assertive');
+    } else if (this.ownedVehicles.length) {
+      announce(`Parking public : ${poi.name}. Vos véhicules restent où vous les laissez, chez vous comme ici ; utilisez Garage sur votre téléphone (touche O) pour en rappeler un à votre position actuelle.`, 'polite');
+    } else {
+      announce(`Parking public : ${poi.name}. Vous n'avez pas encore de véhicule à y garer.`, 'polite');
+    }
+  },
   aircraftMenu(poi) {
     const types = poi.type === 'heliport' ? ['helico'] : ['avion'];
     const list = City.vehicles.filter(v => types.includes(v.type) && !v.owner);
     if (!list.length) return announce('Aucun appareil disponible.', 'assertive');
     const v = list[0]; v.x = poi.x; v.y = poi.y + 2; v.locked = false;
-    announce(`${v.name} prêt sur le tarmac.`, 'assertive');
+    v.fuel = 1; // Prêt à voler : sinon un appareil ambiant à court d'essence donnait l'impression que les commandes ne répondaient pas.
+    announce(`${v.name} prêt sur le tarmac, plein d'essence fait.`, 'assertive');
   },
   openWarehouse(poi) {
     if (!this.ownedWarehouses.includes(poi.id)) {
@@ -2858,6 +2905,34 @@ const Game = {
   // Système d'eau : plonger fait basculer entre nager en surface (pas dans
   // l'eau) et nager sous l'eau (immersion). Boire ne fonctionne que dans
   // l'eau, et réduit vraiment la soif.
+  // Jardin de la maison : planter des graines (achetées au marché noir), puis
+  // revenir plus tard récolter. Illégal comme toute détention de stupéfiant :
+  // la récolte a une chance d'alerter la police, comme d'autres actes illégaux.
+  tendGarden() {
+    const house = this.interior && this.interior.ref;
+    if (!house) return announce('Aucun jardin ici.', 'assertive');
+    if (house.plantation) {
+      const elapsed = Date.now() - house.plantation.startedAt;
+      const drug = DRUG_CATALOG.find(d => d.id === house.plantation.drugId);
+      if (elapsed >= house.plantation.durationMs) {
+        const qty = UTIL.randInt(3, 8);
+        this.addItem({ ...drug, q: qty });
+        announce(`Récolte : ${qty} ${drug?.name || 'plants'} ! C'est illégal, évitez de vous faire remarquer.`, 'assertive');
+        house.plantation = null;
+        updateHud();
+        if (UTIL.chance(0.15)) this.reportCrimeToPolice('culture_drogue', house.name);
+      } else {
+        const remainMin = Math.max(1, Math.ceil((house.plantation.durationMs - elapsed) / 60000));
+        announce(`Vos plants de ${drug?.name.toLowerCase() || 'chanvre'} poussent encore. Environ ${remainMin} minute(s) avant la récolte.`, 'polite');
+      }
+      return;
+    }
+    const seed = this.inventory.find(i => i.id === 'graines_herbe');
+    if (!seed) return announce('Vous n\'avez pas de graines à planter. Achetez-en au marché noir.', 'assertive');
+    this.removeItem('graines_herbe', 1);
+    house.plantation = { drugId: 'herbe', startedAt: Date.now(), durationMs: 6 * 60 * 1000 };
+    announce('Vous plantez des graines de chanvre dans le jardin. Revenez dans environ 6 minutes pour la récolte.', 'assertive');
+  },
   diveInWater() {
     if (this.inVehicle) return announce('Descendez d\'abord du véhicule.', 'assertive');
     if (!this.inWater) return announce('Il n\'y a pas d\'eau ici pour plonger.', 'assertive');
