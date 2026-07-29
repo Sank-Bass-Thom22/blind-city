@@ -225,7 +225,7 @@ function renderMenu(items, handler) {
   }
   items.forEach((it, i) => {
     const card = document.createElement('div'); card.className = 'menu-card'; card.tabIndex = 0; card.setAttribute('role', 'button');
-    card.innerHTML = `<h4>${it.title}</h4><p>${it.desc}</p>`;
+    card.innerHTML = `<h4>${escapeHtml(it.title)}</h4><p>${escapeHtml(it.desc)}</p>`;
     card.addEventListener('click', () => handler(it));
     card.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handler(it); } });
     c.appendChild(card);
@@ -234,7 +234,7 @@ function renderMenu(items, handler) {
   if (MenuNav.stack.length > 1) {
     const prevTitle = MenuNav.stack[MenuNav.stack.length - 2].title;
     const back = document.createElement('div'); back.className = 'menu-card menu-card-back'; back.tabIndex = 0; back.setAttribute('role', 'button');
-    back.innerHTML = `<h4>↩️ Retour</h4><p>Revenir au menu précédent${prevTitle ? ' : ' + prevTitle : ''}.</p>`;
+    back.innerHTML = `<h4>↩️ Retour</h4><p>Revenir au menu précédent${prevTitle ? ' : ' + escapeHtml(prevTitle) : ''}.</p>`;
     back.addEventListener('click', menuGoBack);
     back.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); menuGoBack(); } });
     c.appendChild(back);
@@ -1443,6 +1443,13 @@ function startGame(seed) {
   // Intervals : protégés eux aussi, pour que gameLoop() démarre toujours ci-dessous
   try {
     setInterval(moveNPCs, 1200);
+    // Purge les PNJ de mission "envolés" (dead + x=-999 : montés dans un
+    // véhicule, escortés, capturés...) : sans ça, City.npcs grossissait sans
+    // fin, ralentissant tous les filter(!n.dead) des boucles chaudes. Délai
+    // généreux (3 min) pour ne jamais interférer avec une mission en cours.
+    // Les cadavres normaux (killNPC) gardent leurs vraies coordonnées et ne
+    // sont donc jamais concernés.
+    setInterval(() => { City.npcs = City.npcs.filter(n => !(n.dead && n.x === -999)); }, 180000);
     setInterval(() => Game.survivalTick(), 2000);
     setInterval(() => {
       if (Game.health < 100 && Game.hunger < 50 && Game.thirst < 50) Game.heal(0.5);
